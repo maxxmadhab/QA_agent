@@ -1,0 +1,533 @@
+# QA Agent
+
+Automated exploratory QA testing for web applications — powered by Playwright and, optionally, LLMs (Claude or GPT-4o).
+
+<p align="center">
+  <code>qa-agent example.com</code>
+</p>
+
+<p align="center">
+  <a href="https://github.com/billrichards/qa-agent/actions/workflows/test.yml"><img src="https://github.com/billrichards/qa-agent/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  <a href="https://pypi.org/project/qa-agent/"><img src="https://img.shields.io/pypi/v/qa-agent" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/qa-agent/"><img src="https://img.shields.io/pypi/pyversions/qa-agent" alt="Python versions"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/billrichards/qa-agent" alt="License"></a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/billrichards/qa-agent/main/docs/console-output-showing-a-test-run-in-progress.png" alt="Console output showing a test run in progress" width="700">
+</p>
+
+Point QA Agent at a URL and it explores your application like a real user: clicking buttons, filling forms, navigating with the keyboard, and checking for accessibility issues. Then it reports what it finds. No test scripts to write or maintain.
+
+Need targeted tests? Pass plain-English instructions and an LLM generates custom Playwright steps that run alongside the standard suite.
+
+---
+
+<details>
+<summary><strong>Table of Contents</strong></summary>
+
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Programmatic Usage](#programmatic-usage)
+- [Agentic Testing](#agentic-testing)
+- [Web Interface & API](#web-interface--api)
+- [CLI Reference](#cli-reference)
+- [Test Categories](#test-categories)
+- [Output Formats](#output-formats)
+- [CI/CD Integration](#cicd-integration)
+- [Exit Codes](#exit-codes)
+- [Troubleshooting](#troubleshooting)
+- [Further Documentation](#further-documentation)
+- [License](#license)
+
+---
+
+## Features
+
+| Category | What it does |
+|---|---|
+| **Agentic testing** | Give Claude or GPT-4o a bug report or feature spec; it generates custom Playwright test steps automatically |
+| **Two modes** | `focused` tests only given URLs; `explore` crawls and discovers pages |
+| **Six test suites** | Keyboard · mouse · forms · accessibility · error detection (on by default) + WCAG 2.1 AA compliance (opt-in) |
+| **Auth support** | Username/password, cookies, Bearer tokens, custom headers |
+| **Four output formats** | Console, Markdown, JSON, PDF |
+| **Screenshots & video** | On-error or every-interaction screenshots; full session recording |
+| **Web UI** | Dashboard for launching runs, live output, and browsing past sessions |
+| **CI/CD ready** | Exit codes map to pass/fail; JSON output integrates with any pipeline |
+
+---
+
+## Installation
+
+> **Requires Python 3.10+.** Check with `python --version`.
+
+```bash
+pip install qa-agent            # standard testing (Playwright only)
+```
+
+Chromium is installed automatically on first run. Optional extras:
+
+```bash
+pip install "qa-agent[pdf]"    # PDF reports (adds WeasyPrint)
+pip install "qa-agent[web]"    # web UI (adds Flask)
+pip install "qa-agent[all]"    # everything above
+```
+
+Agentic testing requires an API key for your chosen provider:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # Anthropic (default)
+export OPENAI_API_KEY=sk-...          # OpenAI
+```
+
+> Chromium is installed automatically on the first run. If you need to reinstall it manually, run `playwright install chromium`.
+
+---
+
+## Quick Start
+
+```bash
+# Test a single URL
+qa-agent https://example.com
+
+# Test multiple URLs
+qa-agent https://example.com https://example.com/about
+
+# Crawl and test discovered pages
+qa-agent --mode explore --max-depth 2 https://example.com
+
+# Generate reports in a custom directory
+qa-agent --output json,markdown --output-dir ./reports https://example.com
+
+# Run via module
+python -m qa_agent https://example.com
+```
+
+---
+
+## Programmatic Usage
+
+```python
+from qa_agent import QAAgent, TestConfig, TestMode, OutputFormat
+
+config = TestConfig(
+    urls=["https://example.com"],
+    mode=TestMode.EXPLORE,
+    output_formats=[OutputFormat.CONSOLE, OutputFormat.JSON],
+    max_depth=2,
+    max_pages=10,
+    instructions="Verify the password reset flow.",  # optional
+)
+
+agent = QAAgent(config)
+session = agent.run()
+
+print(f"Pages tested:   {len(session.pages_tested)}")
+print(f"Total findings: {session.total_findings}")
+```
+
+Set `workers` to test pages in parallel, and use `BatchRunner` to run several
+independent sessions concurrently with a bounded pool:
+
+```python
+from qa_agent import BatchRunner, TestConfig
+
+configs = [
+    TestConfig(urls=["https://example.com"], workers=4),
+    TestConfig(urls=["https://other.test"]),
+]
+
+with BatchRunner(pool_size=4) as runner:
+    for result in runner.run_all(configs):
+        if isinstance(result, Exception):
+            print(f"session failed: {result}")
+        else:
+            print(f"{result.session_id}: {result.total_findings} findings")
+```
+
+→ [Full Python API Reference](https://github.com/billrichards/qa-agent/blob/main/docs/api-reference.md) — all classes, methods, and configuration options.
+
+---
+
+## Agentic Testing
+
+Pass natural-language instructions and an LLM generates custom test steps that run alongside the standard suite. Supports **Anthropic** (Claude) and **OpenAI** (GPT-4o and others). No third-party AI packages are required — all API calls use Python's built-in `urllib`.
+
+```bash
+# From a bug report (Anthropic, default)
+qa-agent --instructions "The login button does nothing when email is blank" \
+  https://example.com/login
+
+# Using OpenAI instead
+qa-agent --llm openai --instructions "The login button does nothing when email is blank" \
+  https://example.com/login
+
+# From a feature spec
+qa-agent --instructions "The 'Remember me' checkbox should be unchecked by default \
+  and persist the session across browser restarts." \
+  https://example.com/login
+
+# From a file
+qa-agent --instructions-file feature-spec.txt https://example.com
+```
+
+### How it works
+
+1. The LLM receives your instructions and the target URL.
+2. It returns a structured plan: summary, focus areas, and custom Playwright test steps.
+3. The agent runs those steps on every tested page alongside the standard suites.
+4. Assertion failures become findings in the report with the severity the LLM assigned.
+
+If the API call fails (or the key is missing), a warning is printed and the run continues with standard tests only.
+
+### Provider, model & caching
+
+```bash
+# Choose provider (default: anthropic)
+qa-agent --llm anthropic --instructions "Test checkout" https://shop.example.com
+qa-agent --llm openai    --instructions "Test checkout" https://shop.example.com
+
+# Override model (defaults: anthropic → claude-sonnet-4-6, openai → gpt-4o)
+qa-agent --llm openai --ai-model gpt-4o-mini --instructions "Test checkout" https://shop.example.com
+
+# Bypass the plan cache
+qa-agent --no-cache --instructions "..." https://example.com
+```
+
+Plans are cached to `~/.qa_agent/cache/` (24-hour TTL). Pass `--no-cache` to force a fresh API call.
+
+---
+
+## Web Interface & API
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/billrichards/qa-agent/main/docs/web-UI-configuration-form.png" alt="Web interface configuration form" width="700">
+</p>
+
+```bash
+python -m qa_agent web              # http://127.0.0.1:5000
+qa-agent-web --host 0.0.0.0 --port 8080  # custom bind
+```
+
+- Configuration form with all CLI options
+- Real-time streaming output (Server-Sent Events)
+- Stop a running test mid-run
+- Browse past sessions grouped by domain
+- Session detail: findings table, severity breakdown, screenshot gallery, report downloads
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/billrichards/qa-agent/main/docs/session-detail-view-showing-findings-table.png" alt="Session detail view showing findings table" width="700">
+</p>
+
+> **No authentication** — intended for local or internal use only.
+
+Output is written to `output/` by default. CLI sessions appear in the web UI automatically (JSON is always written).
+
+### REST API
+
+The web server exposes a JSON API at `http://127.0.0.1:5000` (default).
+
+```bash
+# Launch a test run
+curl -X POST http://127.0.0.1:5000/api/run \
+  -H "Content-Type: application/json" \
+  -d '{"urls": ["https://example.com"]}'
+# → {"job_id": "a1b2c3d4", "status": "running", "stream_url": "/api/stream/a1b2c3d4"}
+
+# Stream live output (Server-Sent Events)
+curl -N http://127.0.0.1:5000/api/stream/a1b2c3d4
+
+# List past sessions
+curl http://127.0.0.1:5000/api/sessions?limit=10
+```
+
+→ [Full API reference](https://github.com/billrichards/qa-agent/blob/main/docs/web-api.md) — all endpoints, request body schema, and SSE event types.
+
+---
+
+## CLI Reference
+
+```bash
+qa-agent --version
+qa-agent --help
+```
+
+### Modes
+
+```bash
+qa-agent --mode focused https://example.com   # default — test only given URLs
+qa-agent --mode explore https://example.com    # crawl and test discovered pages
+```
+
+### Concurrency
+
+Test multiple pages in parallel with cooperating workers. Each worker drives its
+own browser, so memory and CPU scale with the worker count (capped at 16).
+
+```bash
+qa-agent --workers 4 --mode explore https://example.com   # 4 pages at a time
+```
+
+Run several independent sessions concurrently from a JSON spec file. Each entry
+needs `urls` plus optional per-run overrides (`mode`, `max_depth`, `max_pages`,
+`instructions`, `workers`); all other settings come from the command-line flags.
+
+```bash
+qa-agent --batch-file runs.json --pool-size 4
+```
+
+```json
+[
+  {"urls": ["https://example.com"], "mode": "explore", "workers": 4},
+  {"urls": ["https://other.test/login"], "instructions": "Check the checkout flow"}
+]
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--workers N` | `1` | Concurrent page-workers per run (max 16) |
+| `--batch-file FILE` | — | JSON file of multiple runs to execute concurrently |
+| `--pool-size N` | `4` | Max concurrent runs for `--batch-file` (max 8) |
+| `--rate-limit N` | `3.0` | Max page navigations/sec to any single host (0 = unlimited) |
+
+> Total live browsers ≈ `pool-size × workers`, so size both with that
+> multiplicative cost in mind. The web API accepts the same `workers` value in
+> the `POST /api/run` body, and the pool size is set server-side via the
+> `QA_AGENT_JOB_POOL_SIZE` environment variable.
+
+By default, navigations to any single host are throttled to 3 requests/second
+across all workers and batch jobs, to avoid overwhelming dev/staging servers
+with "too many connections" when running with many concurrent browsers. Raise
+or disable this with `--rate-limit` (e.g. `--rate-limit 10` or `--rate-limit 0`
+for unlimited). The limit applies only to page navigations (`page.goto()`), not
+in-page interactions like clicks or form fills. The web server uses the same
+3 req/s default, overridable via the `QA_AGENT_RATE_LIMIT` environment variable.
+
+### Exploration (explore mode)
+
+| Flag | Default | Description |
+|---|---|---|
+| `--max-depth N` | `3` | Max link depth |
+| `--max-pages N` | `100` | Max pages to test |
+| `--max-interactions N` | `50` | Max interactions per page |
+| `--allow-external` | off | Follow links to other domains |
+| `--ignore PATTERN` | — | URL regex to skip (repeatable) |
+
+### Authentication
+
+```bash
+qa-agent --auth "user:pass@https://example.com/login" https://example.com/dashboard
+qa-agent --auth-file auth.json https://example.com
+qa-agent --cookies cookies.json https://example.com
+qa-agent --header "Authorization: Bearer token123" https://example.com
+```
+
+<details>
+<summary><strong>auth.json schema</strong></summary>
+
+```json
+{
+  "username": "testuser",
+  "password": "testpass",
+  "auth_url": "https://example.com/login",
+  "username_selector": "input#email",
+  "password_selector": "input#password",
+  "submit_selector": "button[type=submit]"
+}
+```
+
+</details>
+
+### Output
+
+```bash
+qa-agent --output console,markdown,json,pdf https://example.com
+qa-agent --output-dir ./reports https://example.com
+```
+
+Default: `console,markdown`. JSON is always written regardless of `--output` (for web UI discovery). Output is organized as `output/{domain}/{session_id}/qa_reports|screenshots|recordings`.
+
+> PDF requires the `[pdf]` extra. Falls back to Markdown if WeasyPrint is not installed.
+
+### Screenshots & recording
+
+```bash
+qa-agent --screenshots       https://example.com  # on errors
+qa-agent --screenshots-all   https://example.com  # every interaction
+qa-agent --full-page         https://example.com  # full-page captures
+qa-agent --record            https://example.com  # session video
+```
+
+### Browser
+
+```bash
+qa-agent --no-headless                  # visible browser window
+qa-agent --viewport 1920x1080           # default: 1280x720
+qa-agent --timeout 60000                # ms, default: 30000
+```
+
+### Test suites
+
+```bash
+# Skip standard suites
+qa-agent --skip-keyboard      https://example.com
+qa-agent --skip-mouse         https://example.com
+qa-agent --skip-forms         https://example.com
+qa-agent --skip-accessibility https://example.com
+qa-agent --skip-errors        https://example.com
+
+# Enable opt-in suites
+qa-agent --wcag-compliance    https://example.com
+```
+
+### Agentic testing flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--llm {anthropic,openai}` | `anthropic` | LLM provider for AI instructions |
+| `--ai-model MODEL` | provider default | Model override (`claude-sonnet-4-6` / `gpt-4o`) |
+| `--no-cache` | off | Bypass the 24-hour plan cache |
+
+---
+
+## Test Categories
+
+Six built-in suites cover keyboard navigation, mouse interaction, form handling, accessibility (WCAG), runtime error detection, and an opt-in WCAG 2.1 AA compliance audit. Five run by default; enable the sixth with `--wcag-compliance`.
+
+→ [Detailed test-by-test reference](https://github.com/billrichards/qa-agent/blob/main/docs/test-categories.md)
+
+---
+
+## Output Formats
+
+### Console
+
+![Colorized console output with summary table](https://raw.githubusercontent.com/billrichards/qa-agent/main/docs/colorized-console-output-with-summary-table.png)
+
+### JSON
+
+```json
+{
+  "meta": {
+    "session_id": "a1b2c3d4",
+    "start_time": "2024-01-15T10:30:00",
+    "duration_seconds": 45.2
+  },
+  "summary": {
+    "pages_tested": 5,
+    "total_findings": 12,
+    "findings_by_severity": { "high": 2, "medium": 5, "low": 5 }
+  },
+  "findings": [...]
+}
+```
+
+### Severity levels
+
+| Level | Meaning |
+|---|---|
+| `CRITICAL` | Security issues, data loss |
+| `HIGH` | Major usability blockers |
+| `MEDIUM` | UX problems, accessibility issues |
+| `LOW` | Minor improvements, best practices |
+| `INFO` | Informational observations |
+
+---
+
+## CI/CD Integration
+
+```yaml
+# GitHub Actions example
+- name: Run QA Tests
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # or OPENAI_API_KEY
+  run: |
+    pip install qa-agent
+    qa-agent --output json --output-dir ./qa-results https://staging.example.com
+
+- name: Upload Results
+  uses: actions/upload-artifact@v4
+  with:
+    name: qa-results
+    path: ./qa-results/
+```
+
+Exits with code `1` when critical or high severity issues are found, failing the CI step automatically. See [Exit Codes](#exit-codes).
+
+> Omit `--instructions` / `--instructions-file` and the API key env vars if you only need standard tests.
+
+---
+
+## Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | All tests passed (no critical/high findings) |
+| `1` | Critical or high severity issues found |
+| `2` | Error running tests |
+| `130` | Interrupted (Ctrl+C) |
+
+---
+
+## Troubleshooting
+
+### Playwright browser not found
+
+Chromium is installed automatically on first run. If reinstalling is needed:
+
+```bash
+playwright install chromium
+```
+
+If automatic installation fails, run the above command manually.
+
+### Web UI not working
+
+```bash
+pip install "qa-agent[web]"
+```
+
+Required for `qa-agent-web` and `python -m qa_agent web`.
+
+### PDF reports missing
+
+```bash
+pip install "qa-agent[pdf]"
+```
+
+Falls back to Markdown silently if WeasyPrint is absent.
+
+### Agentic testing skipped
+
+No extra packages are needed — LLM calls use Python's built-in `urllib`. You only need a valid API key for your chosen provider:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # for --llm anthropic (default)
+export OPENAI_API_KEY=sk-...          # for --llm openai
+```
+
+If the key is missing or the API call fails, qa-agent prints a warning and continues with standard tests.
+
+### Python version too old
+
+Requires **3.10+**. Check with `python --version`.
+
+---
+
+## Further Documentation
+
+| Document | Description |
+|---|---|
+| [Architecture](https://github.com/billrichards/qa-agent/blob/main/docs/architecture.md) | System architecture and how to extend QA Agent |
+| [Development Guide](https://github.com/billrichards/qa-agent/blob/main/docs/development.md) | Detailed development setup, testing, and build processes |
+| [Python API Reference](https://github.com/billrichards/qa-agent/blob/main/docs/api-reference.md) | Programmatic usage for embedding QA Agent in Python code |
+| [Test Categories](https://github.com/billrichards/qa-agent/blob/main/docs/test-categories.md) | Detailed test-by-test reference |
+| [Web API](https://github.com/billrichards/qa-agent/blob/main/docs/web-api.md) | Full REST API documentation |
+| [Contributing](https://github.com/billrichards/qa-agent/blob/main/CONTRIBUTING.md) | Contribution guidelines and pull request process |
+
+---
+
+## License
+
+MIT — Copyright (c) 2026 Bill Richards. See [LICENSE](https://github.com/billrichards/qa-agent/blob/main/LICENSE).

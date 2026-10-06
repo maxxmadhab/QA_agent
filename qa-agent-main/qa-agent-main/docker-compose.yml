@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  qa-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: qa-agent:latest
+    container_name: qa-agent-service
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      - ./qa-agent-output:/app/qa-agent-output
+    command: ["qa-agent", "http://target-app:5000"]
+    depends_on:
+      target-app:
+        condition: service_started
+
+  target-app:
+    image: python:3.11-slim
+    container_name: qa-target-app
+    command: python -m http.server 5000
+    ports:
+      - "5000:5000"

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Sessions — QA Agent{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Test Sessions</h1>
+  <div class="page-header-actions">
+    <input type="search" id="search" class="search-input" placeholder="Filter by domain or URL…">
+    <a href="/" class="btn btn-primary">New Test</a>
+  </div>
+</div>
+
+<div id="active-jobs-container"></div>
+
+<div id="sessions-container">
+  <div class="spinner"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/sessions.js"></script>
+{% endblock %}

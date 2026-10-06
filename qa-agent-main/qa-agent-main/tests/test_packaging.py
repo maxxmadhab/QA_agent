@@ -1,0 +1,751 @@
+"""Packaging validation, web-UI asset inclusion, CLI smoke, and public-API tests.
+
+These tests do not require a browser or an Anthropic API key.  The build-level
+tests (``TestPackagingBuild``) invoke ``python -m build`` as a subprocess and
+may take ~20 s on first run; subsequent runs reuse the ``tmp_path_factory``
+fixture.
+"""
+
+from __future__ import annotations
+
+import re
+import shutil
+import subprocess
+import sys
+import tarfile
+import zipfile
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).parent.parent
+
+
+# ---------------------------------------------------------------------------
+# Helper — build artifacts (cached per test session via class-scoped fixture)
+# ---------------------------------------------------------------------------
+
+def _build_dist(kind: str, dest: Path) -> Path:
+    """Run ``python -m build`` to produce a wheel or sdist in *dest*.
+
+    Returns the single artifact path.
+    """
+    # Clean up build directory before building to prevent recursive structure issues
+    build_dir = REPO_ROOT / "build"
+    if build_dir.exists():
+        shutil.rmtree(build_dir, ignore_errors=True)
+
+    flag = "--wheel" if kind == "wheel" else "--sdist"
+    result = subprocess.run(
+        [sys.executable, "-m", "build", flag, "--outdir", str(dest), str(REPO_ROOT)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"{kind} build failed.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    )
+    ext = "*.whl" if kind == "wheel" else "*.tar.gz"
+    artifacts = list(dest.glob(ext))
+    assert len(artifacts) == 1, f"Expected 1 {kind} artifact, found: {artifacts}"
+
+    # Clean up build directory after building as well
+    if build_dir.exists():
+        shutil.rmtree(build_dir, ignore_errors=True)
+
+    return artifacts[0]
+
+
+# ---------------------------------------------------------------------------
+# Packaging validation — wheel and sdist contents
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+class TestPackagingBuild:
+    """Build wheel and sdist, then inspect their contents.
+
+    Marked ``slow`` because each fixture invokes ``python -m build``.
+    Exclude from fast runs with: pytest -m "not slow"
+    """
+
+    @pytest.fixture(scope="class")
+    def wheel_path(self, tmp_path_factory):
+        return _build_dist("wheel", tmp_path_factory.mktemp("wheel_dist"))
+
+    @pytest.fixture(scope="class")
+    def sdist_path(self, tmp_path_factory):
+        return _build_dist("sdist", tmp_path_factory.mktemp("sdist_dist"))
+
+    # -- wheel ----------------------------------------------------------------
+
+    def test_wheel_contains_core_modules(self, wheel_path):
+        """All core Python modules must be present in the wheel."""
+        with zipfile.ZipFile(wheel_path) as zf:
+            names = zf.namelist()
+        expected = [
+            "qa_agent/__init__.py",
+            "qa_agent/agent.py",
+            "qa_agent/cli.py",
+            "qa_agent/config.py",
+            "qa_agent/models.py",
+            "qa_agent/ai_planner.py",
+            "qa_agent/plan_cache.py",
+            "qa_agent/web/__init__.py",
+            "qa_agent/web/server.py",
+        ]
+        for path in expected:
+            assert any(path in n for n in names), (
+                f"{path!r} missing from wheel.  Wheel contents sample: {names[:15]}"
+            )
+
+    def test_wheel_contains_web_templates(self, wheel_path):
+        """HTML templates must be bundled inside the wheel."""
+        with zipfile.ZipFile(wheel_path) as zf:
+            names = zf.namelist()
+        for template in ("index.html", "base.html", "run.html", "session.html", "sessions.html"):
+            assert any(f"templates/{template}" in n for n in names), (
+                f"Template {template!r} missing from wheel.\n"
+                f"Web-related entries: {[n for n in names if 'web' in n]}"
+            )
+
+    def test_wheel_contains_static_assets(self, wheel_path):
+        """JS and CSS static assets must be bundled inside the wheel."""
+        with zipfile.ZipFile(wheel_path) as zf:
+            names = zf.namelist()
+        for asset in ("app.js", "style.css"):
+            assert any(f"static/{asset}" in n for n in names), (
+                f"Static asset {asset!r} missing from wheel"
+            )
+
+    def test_wheel_metadata_version_matches_package(self, wheel_path):
+        """The METADATA file version must match ``qa_agent.__version__``."""
+        from qa_agent import __version__
+        with zipfile.ZipFile(wheel_path) as zf:
+            metadata_entries = [n for n in zf.namelist() if n.endswith("/METADATA")]
+            assert metadata_entries, "No METADATA file found in wheel"
+            metadata = zf.read(metadata_entries[0]).decode()
+        assert f"Version: {__version__}" in metadata, (
+            f"Version {__version__!r} not found in wheel METADATA"
+        )
+
+    def test_wheel_entry_points(self, wheel_path):
+        """The CLI entry points ``qa-agent`` and ``qa-agent-web`` must be declared."""
+        with zipfile.ZipFile(wheel_path) as zf:
+            ep_entries = [n for n in zf.namelist() if "entry_points" in n]
+            assert ep_entries, "No entry_points.txt found in wheel"
+            ep_text = zf.read(ep_entries[0]).decode()
+        assert "qa-agent" in ep_text, f"qa-agent entry point missing. entry_points.txt:\n{ep_text}"
+        assert "qa-agent-web" in ep_text, (
+            f"qa-agent-web entry point missing. entry_points.txt:\n{ep_text}"
+        )
+
+    # -- sdist ----------------------------------------------------------------
+
+    def test_sdist_contains_readme(self, sdist_path):
+        """README.md must be included in the sdist."""
+        with tarfile.open(sdist_path, "r:gz") as tf:
+            members = tf.getnames()
+        assert any("README.md" in m for m in members), "README.md missing from sdist"
+
+    def test_sdist_contains_pyproject(self, sdist_path):
+        """pyproject.toml must be included in the sdist."""
+        with tarfile.open(sdist_path, "r:gz") as tf:
+            members = tf.getnames()
+        assert any("pyproject.toml" in m for m in members), "pyproject.toml missing from sdist"
+
+    def test_sdist_contains_license(self, sdist_path):
+        """LICENSE must be included in the sdist."""
+        with tarfile.open(sdist_path, "r:gz") as tf:
+            members = tf.getnames()
+        assert any("LICENSE" in m for m in members), "LICENSE missing from sdist"
+
+    def test_sdist_contains_source_modules(self, sdist_path):
+        """Core source files must be in the sdist."""
+        with tarfile.open(sdist_path, "r:gz") as tf:
+            members = tf.getnames()
+        for module in ("cli.py", "agent.py", "models.py", "config.py"):
+            assert any(module in m for m in members), f"{module} missing from sdist"
+
+    def test_sdist_contains_web_assets(self, sdist_path):
+        """Web templates and static assets must be in the sdist."""
+        with tarfile.open(sdist_path, "r:gz") as tf:
+            members = tf.getnames()
+        for asset in ("app.js", "style.css", "index.html", "base.html"):
+            assert any(asset in m for m in members), (
+                f"Web asset {asset!r} missing from sdist"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Web UI asset inclusion — on-disk verification (no build required)
+# ---------------------------------------------------------------------------
+
+class TestWebUIAssets:
+    """Verify web UI assets exist on disk and are declared in pyproject.toml."""
+
+    def test_templates_directory_exists(self):
+        templates_dir = REPO_ROOT / "qa_agent" / "web" / "templates"
+        assert templates_dir.is_dir(), f"templates/ missing at {templates_dir}"
+
+    def test_static_directory_exists(self):
+        static_dir = REPO_ROOT / "qa_agent" / "web" / "static"
+        assert static_dir.is_dir(), f"static/ missing at {static_dir}"
+
+    @pytest.mark.parametrize("name", ["base.html", "index.html", "run.html",
+                                       "session.html", "sessions.html"])
+    def test_html_template_present_and_nonempty(self, name):
+        path = REPO_ROOT / "qa_agent" / "web" / "templates" / name
+        assert path.exists(), f"Template {name!r} not found"
+        assert path.stat().st_size > 0, f"Template {name!r} is empty"
+
+    def test_app_js_present_and_nonempty(self):
+        path = REPO_ROOT / "qa_agent" / "web" / "static" / "app.js"
+        assert path.exists(), "app.js not found"
+        assert path.stat().st_size > 0, "app.js is empty"
+
+    def test_style_css_present_and_nonempty(self):
+        path = REPO_ROOT / "qa_agent" / "web" / "static" / "style.css"
+        assert path.exists(), "style.css not found"
+        assert path.stat().st_size > 0, "style.css is empty"
+
+    def test_pyproject_no_ai_extra(self):
+        """The [ai] convenience extra was removed in v0.2.0 — ensure it stays gone."""
+        content = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        # Match only a bare `ai = [` extras declaration, not substrings like "main" or "fail"
+        assert not re.search(r"^ai\s*=\s*\[", content, re.MULTILINE), (
+            "pyproject.toml still declares an [ai] extra — it was removed in v0.2.0 "
+            "because agentic testing requires no additional packages"
+        )
+
+    def test_pyproject_declares_package_data_for_web(self):
+        """``[tool.setuptools.package-data]`` must cover web templates and static files."""
+        content = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        assert "[tool.setuptools.package-data]" in content, (
+            "No [tool.setuptools.package-data] section found in pyproject.toml; "
+            "web assets will be excluded from the wheel."
+        )
+        # The section must reference qa_agent.web (or a wildcard) and cover
+        # templates and/or static files.
+        assert "qa_agent.web" in content, (
+            "pyproject.toml package-data does not mention qa_agent.web"
+        )
+        assert "template" in content or "static" in content, (
+            "pyproject.toml package-data entry for qa_agent.web must cover "
+            "templates/*.html and/or static/*"
+        )
+
+    def test_flask_app_references_correct_template_dir(self):
+        """Flask app in server.py must resolve templates relative to the web package."""
+        server_src = (REPO_ROOT / "qa_agent" / "web" / "server.py").read_text(encoding="utf-8")
+        # Flask(name) uses the module's directory — templates must live there
+        assert "Flask(__name__" in server_src, (
+            "Flask app is not created with __name__; template resolution may be wrong"
+        )
+
+
+# ---------------------------------------------------------------------------
+# README consistency and formatting
+# ---------------------------------------------------------------------------
+
+class TestReadmeConsistency:
+    """README examples must match the actual implementation."""
+
+    @pytest.fixture(scope="class")
+    def readme(self):
+        return (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    def test_readme_uses_pages_tested(self, readme):
+        """The programmatic example must use ``session.pages_tested`` (not ``session.pages``)."""
+        # ``session.pages`` does not exist on TestSession; the correct attribute is pages_tested
+        assert "session.pages_tested" in readme, (
+            "README programmatic example should reference session.pages_tested"
+        )
+
+    def test_readme_does_not_reference_nonexistent_pages_attr(self, readme):
+        """``session.pages`` (without _tested) must not appear in code blocks."""
+        # Find all fenced code blocks and check they don't use the wrong attribute
+        code_blocks = re.findall(r"```(?:python)?\n(.*?)```", readme, re.DOTALL)
+        for block in code_blocks:
+            # session.pages[ or session.pages) signals the wrong attribute name
+            bad = re.search(r"session\.pages(?!_tested)[\[\)\.\s,]", block)
+            assert not bad, (
+                f"README code block uses 'session.pages' (non-existent attribute):\n{block}"
+            )
+
+    def test_readme_documents_exit_codes(self, readme):
+        """README must document all four exit codes."""
+        for code in ("0", "1", "2", "130"):
+            assert code in readme, f"Exit code {code!r} not documented in README"
+
+    def test_readme_installation_commands(self, readme):
+        """README must show pip install and playwright install commands."""
+        assert "pip install" in readme
+        assert "playwright install" in readme
+
+    def test_readme_version_flag_mentioned(self, readme):
+        """README must document the --version flag."""
+        assert "--version" in readme, "README should document the --version CLI flag"
+
+    def test_no_broken_local_image_links(self, readme):
+        """Every local image path referenced in README must exist on disk."""
+        pattern = re.compile(r"!\[.*?\]\(\./([^)]+)\)")
+        for match in pattern.finditer(readme):
+            rel_path = match.group(1)
+            full_path = REPO_ROOT / rel_path
+            assert full_path.exists(), (
+                f"README references image that doesn't exist: {rel_path!r}"
+            )
+
+    def test_readme_references_docs(self, readme):
+        """README must link to the three reference docs added in v0.2.0."""
+        for doc in ("docs/web-api.md", "docs/test-categories.md", "docs/architecture.md"):
+            assert doc in readme, f"README does not reference {doc!r}"
+
+    def test_docs_files_exist(self):
+        """All three reference docs added in v0.2.0 must exist on disk."""
+        for name in ("web-api.md", "test-categories.md", "architecture.md"):
+            path = REPO_ROOT / "docs" / name
+            assert path.exists() and path.stat().st_size > 0, (
+                f"docs/{name} is missing or empty"
+            )
+
+    def test_readme_programmatic_imports_importable(self, readme):
+        """Classes imported in the README programmatic example must actually exist."""
+        # Extract the from-import line in the programmatic usage section
+        imports = re.findall(
+            r"from qa_agent(?:\.\w+)? import ([\w, ]+)", readme
+        )
+        assert imports, (
+            "No 'from qa_agent ... import' lines found in README — "
+            "the regex may be wrong or the programmatic usage section was removed"
+        )
+        for import_list in imports:
+            for name in (n.strip() for n in import_list.split(",")):
+                if not name:
+                    continue
+                # Try to import from all likely submodules
+                found = False
+                for module in ("qa_agent", "qa_agent.agent", "qa_agent.config", "qa_agent.models"):
+                    try:
+                        mod = __import__(module, fromlist=[name])
+                        if hasattr(mod, name):
+                            found = True
+                            break
+                    except ImportError:
+                        pass
+                assert found, (
+                    f"README imports {name!r} but it cannot be found in qa_agent.*"
+                )
+
+
+# ---------------------------------------------------------------------------
+# CLI smoke tests — subprocess
+# ---------------------------------------------------------------------------
+
+class TestCLISmoke:
+    """Invoke the CLI via subprocess to verify the installed entry point works."""
+
+    def test_version_flag(self):
+        """--version must exit 0 and print the installed package version."""
+        from qa_agent import __version__
+        result = subprocess.run(
+            [sys.executable, "-m", "qa_agent", "--version"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"--version exited {result.returncode}. stderr: {result.stderr}"
+        )
+        output = result.stdout + result.stderr
+        assert __version__ in output, (
+            f"Expected {__version__!r} in --version output, got: {output!r}"
+        )
+
+    def test_help_flag_exits_0(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "qa_agent", "--help"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+
+    def test_help_flag_mentions_url_argument(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "qa_agent", "--help"],
+            capture_output=True, text=True,
+        )
+        output = result.stdout + result.stderr
+        assert "url" in output.lower(), f"'url' not found in --help output: {output[:500]}"
+
+    def test_help_flag_mentions_mode(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "qa_agent", "--help"],
+            capture_output=True, text=True,
+        )
+        output = result.stdout + result.stderr
+        assert "--mode" in output
+
+    def test_help_flag_mentions_output(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "qa_agent", "--help"],
+            capture_output=True, text=True,
+        )
+        output = result.stdout + result.stderr
+        assert "--output" in output
+
+    def test_no_args_exits_nonzero(self):
+        """The CLI with no arguments must exit non-zero (missing required URL arg)."""
+        result = subprocess.run(
+            [sys.executable, "-m", "qa_agent"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0, "Expected non-zero exit when no URL is given"
+
+    def test_no_cache_without_instructions_exits_2(self):
+        """--no-cache without --instructions must exit 2."""
+        result = subprocess.run(
+            [sys.executable, "-m", "qa_agent", "--no-cache", "https://example.com"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 2
+
+    def test_invalid_mode_exits_nonzero(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "qa_agent", "--mode", "not_a_mode", "https://example.com"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode != 0
+
+    def test_help_flag_mentions_max_interactions(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "qa_agent", "--help"],
+            capture_output=True, text=True,
+        )
+        output = result.stdout + result.stderr
+        assert "--max-interactions" in output, (
+            f"'--max-interactions' not found in --help output: {output[:500]}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Public API smoke tests
+# ---------------------------------------------------------------------------
+
+class TestPublicAPI:
+    """The public Python API must be importable and structurally correct."""
+
+    def test_version_attribute_exists(self):
+        from qa_agent import __version__
+        assert isinstance(__version__, str) and __version__
+
+    def test_version_is_pep440(self):
+        from qa_agent import __version__
+        assert re.fullmatch(r"\d+\.\d+(\.\d+)?(\.?(a|b|rc|dev)\d+)?", __version__), (
+            f"__version__ {__version__!r} does not look like a PEP 440 version"
+        )
+
+    def test_qaagent_importable(self):
+        from qa_agent.agent import QAAgent
+        assert callable(QAAgent)
+
+    def test_testconfig_importable_and_constructible(self):
+        from qa_agent.config import TestConfig
+        cfg = TestConfig(urls=["https://example.com"])
+        assert cfg.urls == ["https://example.com"]
+
+    def test_testmode_values(self):
+        from qa_agent.config import TestMode
+        assert hasattr(TestMode, "FOCUSED")
+        assert hasattr(TestMode, "EXPLORE")
+
+    def test_outputformat_values(self):
+        from qa_agent.config import OutputFormat
+        for name in ("CONSOLE", "JSON", "MARKDOWN", "PDF"):
+            assert hasattr(OutputFormat, name), f"OutputFormat.{name} missing"
+
+    def test_severity_values(self):
+        from qa_agent.models import Severity
+        for name in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
+            assert hasattr(Severity, name), f"Severity.{name} missing"
+
+    def test_finding_category_values(self):
+        from qa_agent.models import FindingCategory
+        for name in ("KEYBOARD_NAVIGATION", "MOUSE_INTERACTION", "FORM_HANDLING",
+                     "ACCESSIBILITY", "CONSOLE_ERROR", "NETWORK_ERROR"):
+            assert hasattr(FindingCategory, name), f"FindingCategory.{name} missing"
+
+    def test_testsession_get_all_findings_returns_list(self):
+        from datetime import datetime
+
+        from qa_agent.models import TestSession
+        session = TestSession(session_id="test-id", start_time=datetime.now())
+        assert isinstance(session.get_all_findings(), list)
+
+    def test_testsession_to_dict_keys(self):
+        from datetime import datetime
+
+        from qa_agent.models import TestSession
+        session = TestSession(session_id="s1", start_time=datetime.now())
+        d = session.to_dict()
+        for key in ("session_id", "findings", "pages_tested", "total_findings",
+                    "findings_by_severity"):
+            assert key in d, f"Key {key!r} missing from TestSession.to_dict()"
+
+    def test_finding_to_dict_keys(self):
+        from qa_agent.models import Finding, FindingCategory, Severity
+        finding = Finding(
+            title="Test",
+            description="desc",
+            category=FindingCategory.ACCESSIBILITY,
+            severity=Severity.MEDIUM,
+            url="https://example.com",
+        )
+        d = finding.to_dict()
+        for key in ("title", "description", "category", "severity", "url"):
+            assert key in d, f"Key {key!r} missing from Finding.to_dict()"
+
+    def test_reporters_importable(self):
+        from qa_agent.reporters.console import ConsoleReporter
+        from qa_agent.reporters.json_reporter import JSONReporter
+        from qa_agent.reporters.markdown import MarkdownReporter
+        for cls in (ConsoleReporter, JSONReporter, MarkdownReporter):
+            assert callable(cls), f"{cls} is not callable"
+
+    def test_testers_importable(self):
+        from qa_agent.testers.accessibility import AccessibilityTester
+        from qa_agent.testers.errors import ErrorDetector
+        from qa_agent.testers.forms import FormTester
+        from qa_agent.testers.keyboard import KeyboardTester
+        from qa_agent.testers.mouse import MouseTester
+        for cls in (AccessibilityTester, ErrorDetector, FormTester, KeyboardTester, MouseTester):
+            assert callable(cls), f"{cls} is not callable"
+
+
+# ---------------------------------------------------------------------------
+# Markdown reporter unit tests
+# ---------------------------------------------------------------------------
+
+class TestMarkdownReporter:
+    """Unit tests for MarkdownReporter behaviour added in v0.2.0."""
+
+    @pytest.fixture
+    def reporter(self, tmp_path):
+        from qa_agent.reporters.markdown import MarkdownReporter
+        return MarkdownReporter(output_dir=str(tmp_path))
+
+    def test_escape_html_tags_wraps_tag(self, reporter):
+        assert reporter._escape_html_tags("<div>") == "`<div>`"
+
+    def test_escape_html_tags_wraps_closing_tag(self, reporter):
+        assert reporter._escape_html_tags("</span>") == "`</span>`"
+
+    def test_escape_html_tags_wraps_tag_with_attributes(self, reporter):
+        result = reporter._escape_html_tags('<a href="x">')
+        assert result == '`<a href="x">`'
+
+    def test_escape_html_tags_skips_already_wrapped(self, reporter):
+        already = "`<div>`"
+        assert reporter._escape_html_tags(already) == already
+
+    def test_escape_html_tags_leaves_plain_text_alone(self, reporter):
+        assert reporter._escape_html_tags("no tags here") == "no tags here"
+
+    def test_pages_tested_clean_page_renders_bullet(self, reporter):
+        """Pages with no findings must render as a plain markdown list item."""
+        from datetime import datetime
+        from unittest.mock import MagicMock
+
+        from qa_agent.models import TestSession
+        session = TestSession(session_id="s1", start_time=datetime.now())
+        page = MagicMock()
+        page.title = "Home"
+        page.url = "https://example.com/"
+        page.findings = []
+        session.pages_tested = [page]
+        content = reporter._build_report(session)
+        assert "- [Home](https://example.com/) - ✅" in content
+
+    def test_pages_tested_findings_renders_details(self, reporter):
+        """Pages with findings must render a <details> block listing finding titles."""
+        from datetime import datetime
+        from unittest.mock import MagicMock
+
+        from qa_agent.models import Finding, FindingCategory, Severity, TestSession
+        session = TestSession(session_id="s2", start_time=datetime.now())
+        finding = Finding(
+            title="Missing alt text",
+            description="desc",
+            category=FindingCategory.ACCESSIBILITY,
+            severity=Severity.MEDIUM,
+            url="https://example.com/",
+        )
+        page = MagicMock()
+        page.title = "Home"
+        page.url = "https://example.com/"
+        page.findings = [finding]
+        session.pages_tested = [page]
+        content = reporter._build_report(session)
+        assert "<details>" in content
+        assert "<summary>" in content
+        assert "Missing alt text" in content
+
+    def test_pages_tested_singular_issue_label(self, reporter):
+        """Exactly one finding must render '1 issue' not '1 issues'."""
+        from datetime import datetime
+        from unittest.mock import MagicMock
+
+        from qa_agent.models import Finding, FindingCategory, Severity, TestSession
+        session = TestSession(session_id="s3", start_time=datetime.now())
+        finding = Finding(
+            title="One problem",
+            description="desc",
+            category=FindingCategory.ACCESSIBILITY,
+            severity=Severity.LOW,
+            url="https://example.com/",
+        )
+        page = MagicMock()
+        page.title = "Page"
+        page.url = "https://example.com/"
+        page.findings = [finding]
+        session.pages_tested = [page]
+        content = reporter._build_report(session)
+        assert "1 issue" in content
+        assert "1 issues" not in content
+
+
+# ---------------------------------------------------------------------------
+# Exit-code smoke coverage (subprocess)
+# ---------------------------------------------------------------------------
+
+_EXIT_HELPER = Path(__file__).parent / "_cli_exit_helper.py"
+
+
+class TestExitCodeSmoke:
+    """Verify all documented exit codes via a dedicated helper script.
+
+    Using a helper script (_cli_exit_helper.py) rather than inline Python
+    strings means a rename or refactor of qa_agent.cli produces a clear
+    ImportError rather than a misleading wrong-exit-code failure.
+    """
+
+    def _run(self, scenario: str) -> int:
+        result = subprocess.run(
+            [sys.executable, str(_EXIT_HELPER), scenario],
+            capture_output=True,
+            text=True,
+        )
+        return result.returncode
+
+    def test_exit_0_no_critical_or_high_findings(self):
+        """No critical/high findings → exit 0."""
+        assert self._run("clean") == 0
+
+    def test_exit_0_only_medium_findings(self):
+        """Only medium findings → exit 0."""
+        assert self._run("medium") == 0
+
+    def test_exit_1_critical_findings(self):
+        """Critical findings → exit 1."""
+        assert self._run("critical") == 1
+
+    def test_exit_1_high_findings(self):
+        """High findings → exit 1."""
+        assert self._run("high") == 1
+
+    def test_exit_1_mixed_critical_and_high(self):
+        """Both critical and high findings → exit 1."""
+        assert self._run("mixed") == 1
+
+    def test_exit_2_on_runtime_error(self):
+        """RuntimeError during run → exit 2."""
+        assert self._run("runtime_error") == 2
+
+    def test_exit_130_on_keyboard_interrupt(self):
+        """KeyboardInterrupt → exit 130."""
+        assert self._run("keyboard_interrupt") == 130
+
+
+# ---------------------------------------------------------------------------
+# Clean-install smoke tests — build wheel, install into a fresh venv, verify
+# ---------------------------------------------------------------------------
+
+def _make_venv(venv_dir: Path) -> Path:
+    """Create a venv at *venv_dir* and return its Python executable path."""
+    import venv as _venv
+    _venv.create(str(venv_dir), with_pip=True, clear=True)
+    if sys.platform == "win32":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python"
+
+
+@pytest.mark.slow
+class TestCleanInstall:
+    """Build the wheel, install it into a fresh venv (non-editable), and verify
+    that entry points and web templates work exactly as a real user would see them.
+
+    This catches gaps that ``TestPackagingBuild`` cannot: inspecting the zip
+    confirms the files are *present*, but only an actual install proves that
+    Flask can *resolve* templates from the installed package data.
+    """
+
+    @pytest.fixture(scope="class")
+    def wheel_path(self, tmp_path_factory):
+        return _build_dist("wheel", tmp_path_factory.mktemp("ci_wheel"))
+
+    @pytest.fixture(scope="class")
+    def venv_python(self, wheel_path, tmp_path_factory):
+        """Fresh venv with the wheel + Flask installed (non-editable)."""
+        python = _make_venv(tmp_path_factory.mktemp("ci_venv"))
+        result = subprocess.run(
+            [str(python), "-m", "pip", "install", "--quiet", str(wheel_path), "flask>=3.0", "nh3>=0.2.15"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"pip install into clean venv failed.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+        return python
+
+    def test_version_entry_point_works_post_install(self, venv_python):
+        """``qa-agent --version`` must succeed and print the version from a clean install."""
+        from qa_agent import __version__
+        result = subprocess.run(
+            [str(venv_python), "-m", "qa_agent", "--version"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"--version failed after clean install.\nstderr: {result.stderr}"
+        )
+        assert __version__ in result.stdout + result.stderr
+
+    def test_web_templates_accessible_post_install(self, venv_python):
+        """Flask must resolve templates from installed package data (not source tree)."""
+        script = (
+            "from qa_agent.web.server import app; "
+            "import pathlib; "
+            "tpl = pathlib.Path(app.template_folder); "
+            "assert tpl.is_dir(), f'template_folder missing: {tpl}'; "
+            "assert (tpl / 'index.html').exists(), 'index.html not found post-install'"
+        )
+        result = subprocess.run(
+            [str(venv_python), "-c", script],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, (
+            f"Web template check failed after clean install.\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+
+    def test_no_flask_gives_helpful_error(self, wheel_path, tmp_path_factory):
+        """Without Flask, ``qa-agent-web`` must print an actionable error, not a traceback."""
+        python = _make_venv(tmp_path_factory.mktemp("no_flask_venv"))
+        subprocess.run(
+            [str(python), "-m", "pip", "install", "--quiet", str(wheel_path)],
+            capture_output=True, text=True, check=True,
+        )
+        result = subprocess.run(
+            [str(python), "-c", "from qa_agent.web import serve_web_cli; serve_web_cli()"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 1, (
+            f"Expected exit 1 when Flask is missing, got {result.returncode}"
+        )
+        output = result.stdout + result.stderr
+        assert "flask" in output.lower(), "Error message should mention flask"
+        assert "pip install" in output, "Error message should show the install command"

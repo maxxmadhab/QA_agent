@@ -1,0 +1,163 @@
+"""Configuration management for QA Agent."""
+
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Literal
+
+from .llm_client import LLMProvider
+
+
+class TestMode(Enum):
+    """Testing mode for the QA agent."""
+    FOCUSED = "focused"  # Test only the given URL(s)
+    EXPLORE = "explore"  # Navigate and discover new pages
+
+
+class OutputFormat(Enum):
+    """Output format for test results."""
+    CONSOLE = "console"
+    MARKDOWN = "markdown"
+    JSON = "json"
+    PDF = "pdf"
+
+
+@dataclass
+class AuthConfig:
+    """Authentication configuration."""
+    username: str | None = None
+    password: str | None = None
+    auth_url: str | None = None  # URL to perform login
+    username_selector: str | None = None  # Selector for username field
+    password_selector: str | None = None  # Selector for password field
+    submit_selector: str | None = None  # Selector for submit button
+    cookies: dict | list[dict] | None = None  # Pre-set cookies for authentication
+    headers: dict | None = None  # Custom headers (e.g., Bearer token)
+
+
+@dataclass
+class ScreenshotConfig:
+    """Screenshot configuration."""
+    enabled: bool = True
+    on_error: bool = True  # Capture on errors
+    on_interaction: bool = False  # Capture on each interaction
+    full_page: bool = False
+    output_dir: str = "./output"
+
+
+@dataclass
+class RecordingConfig:
+    """Session recording configuration."""
+    enabled: bool = False
+    output_dir: str = "./output"
+    video_size: dict = field(default_factory=lambda: {"width": 1280, "height": 720})
+
+
+@dataclass
+class TestConfig:
+    """Main test configuration."""
+    urls: list[str] = field(default_factory=list)
+    mode: TestMode = TestMode.FOCUSED
+    output_formats: list[OutputFormat] = field(
+        default_factory=lambda: [OutputFormat.CONSOLE, OutputFormat.MARKDOWN]
+    )
+    output_dir: str = "./qa-agent-output"
+
+    # Browser settings
+    headless: bool = True
+    viewport_width: int = 1280
+    viewport_height: int = 720
+    timeout: int = 30000  # ms
+
+    # Exploration settings
+    max_depth: int = 3  # Max navigation depth in explore mode
+    max_pages: int = 100  # Max pages to visit in explore mode
+    max_interactions_per_page: int = 50  # Max interactions per page
+
+    # Test categories to run
+    test_keyboard: bool = True
+    test_mouse: bool = True
+    test_forms: bool = True
+    test_accessibility: bool = True
+    test_console_errors: bool = True
+    test_network_errors: bool = True
+    test_wcag_compliance: bool = False  # Detailed WCAG 2.1 AA compliance (opt-in, intensive)
+
+    # Authentication
+    auth: AuthConfig | None = None
+
+    # Screenshots and recording
+    screenshots: ScreenshotConfig = field(default_factory=ScreenshotConfig)
+    recording: RecordingConfig = field(default_factory=RecordingConfig)
+
+    # Ignore patterns (URLs to skip in explore mode)
+    ignore_patterns: list[str] = field(default_factory=list)
+
+    # Stay within same domain in explore mode
+    same_domain_only: bool = True
+
+    # Agentic testing: natural language instructions interpreted by an LLM
+    instructions: str | None = None
+    llm_provider: LLMProvider = LLMProvider.ANTHROPIC
+    ai_model: str | None = None  # None → use the provider's default model
+    use_plan_cache: bool = True  # Cache generated test plans to avoid redundant API calls
+
+    # Post-run LLM summary: narrative analysis of findings after the run completes
+    generate_summary: bool = False
+
+    # Invocation context — used to tailor diagnostic hints
+    invocation_context: Literal["cli", "web"] | None = None
+
+    # Number of concurrent page-workers per run. 1 = sequential (default).
+    # Each worker drives its own browser/context, so total browsers scale with
+    # this value; it is clamped to a sane ceiling in __post_init__.
+    workers: int = 1
+
+    # Hard ceiling on concurrent page-workers to bound browser RAM/CPU.
+    WORKERS_MAX = 16
+
+    # Max page navigations per second to any single host (page.goto() only).
+    # Shared across all workers/batch jobs targeting that host, to avoid
+    # overwhelming fragile dev/staging servers with "too many connections"
+    # when --workers / --batch-file fan out many concurrent browsers.
+    # 0 disables throttling entirely.
+    rate_limit: float = 3.0
+
+    # Ceiling on rate_limit to prevent runaway configs from disabling
+    # effective throttling via an absurdly high rate.
+    RATE_LIMIT_MAX = 50.0
+
+    # Part 1 DevOps & API Testing
+    enable_api_tests: bool = False
+    postman_collection: str | None = None
+    enable_code_quality: bool = False
+    enable_security_checks: bool = False
+    enable_project_health: bool = False
+
+    # Part 2 DevOps Testing (Docker, Container Security, Web Security, Performance)
+    enable_docker_tests: bool = False
+    enable_container_security: bool = False
+    enable_web_security: bool = False
+    enable_performance_tests: bool = False
+    locust_users: int = 10
+    locust_spawn_rate: float = 2.0
+    locust_duration: float = 5.0
+    max_error_rate: float = 5.0
+    max_p95_ms: float = 3000.0
+    fail_on_severity: str | None = None
+
+    def __post_init__(self) -> None:
+        # Clamp worker count to [1, WORKERS_MAX]. Defensive against bad input
+        # from CLI flags or web request bodies.
+        try:
+            workers = int(self.workers)
+        except (TypeError, ValueError):
+            workers = 1
+        self.workers = max(1, min(self.WORKERS_MAX, workers))
+
+        # Clamp rate_limit to [0, RATE_LIMIT_MAX]. 0 (or negative) means
+        # "unlimited" and is preserved as exactly 0.0 rather than floored up.
+        try:
+            rate_limit = float(self.rate_limit)
+        except (TypeError, ValueError):
+            rate_limit = 3.0
+        self.rate_limit = 0.0 if rate_limit <= 0 else min(self.RATE_LIMIT_MAX, rate_limit)

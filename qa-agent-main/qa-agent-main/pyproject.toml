@@ -1,0 +1,112 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qa-agent"
+version = "0.3.0"
+description = "Agentic exploratory QA testing for web applications"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.10"
+authors = [{name = "Bill Richards"}]
+keywords = ["qa", "testing", "playwright", "accessibility", "agentic", "automation", "exploratory-testing"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+]
+dependencies = [
+    "playwright>=1.40.0",
+]
+
+[project.optional-dependencies]
+pdf = [
+    "weasyprint>=60.0",
+]
+web = [
+    "flask>=3.0",
+    "markdown>=3.5",
+    "nh3>=0.2.15",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-playwright>=0.4.0",
+    "pytest-cov>=5.0.0",
+    "pytest-mock>=3.10.0",
+    "pytest-xdist>=3.0.0",
+    "black>=23.0.0",
+    "ruff>=0.4.0",
+    "mypy>=1.0.0",
+    "build>=1.0.0",
+]
+all = [
+    "qa-agent[pdf,web]",
+]
+
+[project.scripts]
+qa-agent = "qa_agent.cli:main"
+qa-agent-web = "qa_agent.web:serve_web_cli"
+
+[project.urls]
+Homepage = "https://github.com/billrichards/qa-agent"
+Repository = "https://github.com/billrichards/qa-agent"
+Documentation = "https://github.com/billrichards/qa-agent/blob/main/docs/README.md"
+Issues = "https://github.com/billrichards/qa-agent/issues"
+Changelog = "https://github.com/billrichards/qa-agent/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+"qa_agent.web" = ["templates/*.html", "static/*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+addopts = "--cov=qa_agent --cov-report=term-missing --cov-fail-under=70 -q"
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore:cannot collect test class 'Test(Config|Mode|Plan|Session)' because it has a __init__ constructor:pytest.PytestCollectionWarning",
+]
+markers = [
+    "integration: tests that run real Playwright against a local fixture server (deselect with -m 'not integration')",
+    "network: tests that require real network access",
+    "slow: tests that perform slow operations such as full package builds (deselect with -m 'not slow')",
+]
+
+[tool.coverage.run]
+source = ["qa_agent"]
+omit = [
+    "qa_agent/testers/wcag_compliance.py",
+    "qa_agent/web/templates/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

@@ -1,0 +1,82 @@
+name: QA & DevOps Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: 'Target URL for QA testing'
+        required: false
+        default: 'https://example.com'
+
+jobs:
+  qa-devops:
+    name: QA & DevOps Testing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[all]"
+
+      - name: Install Playwright Browsers
+        run: |
+          playwright install chromium --with-deps
+
+      - name: Code Quality & Type Checks (Ruff & Mypy)
+        run: |
+          ruff check qa_agent/ tests/
+          mypy qa_agent/
+
+      - name: Run QA DevOps Suite
+        env:
+          TARGET_URL: ${{ github.event.inputs.target_url || 'https://example.com' }}
+        run: |
+          python -m qa_agent \
+            --run-code-quality \
+            --run-security \
+            --run-health \
+            --test-docker \
+            --test-container-security \
+            --test-web-security \
+            --test-performance \
+            --fail-on-severity high \
+            --output console,markdown,json \
+            "$TARGET_URL" || echo "QA_AGENT_FAILED=true" >> $GITHUB_ENV
+
+      - name: Publish Markdown Report to Job Summary
+        if: always()
+        run: |
+          REPORT_FILE=$(find qa-agent-output -name "qa_report_*.md" | sort | tail -n 1)
+          if [ -f "$REPORT_FILE" ]; then
+            cat "$REPORT_FILE" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No Markdown QA report found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload Report Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-agent-reports
+          path: qa-agent-output/
+
+      - name: Check Build Failure Threshold
+        run: |
+          if [ "$QA_AGENT_FAILED" = "true" ]; then
+            echo "::error::QA Agent detected high/critical severity issues. Failing workflow step."
+            exit 1
+          fi

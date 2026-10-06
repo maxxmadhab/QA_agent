@@ -1,0 +1,827 @@
+"""Flask web server for QA Agent."""
+
+import html as html_lib
+import io
+import json
+import os
+import queue
+import re
+import sys
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+
+from flask import Flask, Response, abort, jsonify, render_template, request, send_file
+
+from ..batch import BatchRunner
+from ..config import (
+    AuthConfig,
+    OutputFormat,
+    RecordingConfig,
+    ScreenshotConfig,
+    TestConfig,
+    TestMode,
+)
+from ..llm_client import LLMProvider
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+_HERE = Path(__file__).resolve().parent      # qa_agent/web/
+OUTPUT_DIR = Path.cwd() / "qa-agent-output"
+
+# ── Flask app ──────────────────────────────────────────────────────────────────
+app = Flask(__name__, template_folder=str(_HERE / "templates"))
+
+
+@app.after_request
+def add_security_headers(response: Response) -> Response:
+    """Add Content-Security-Policy and other security headers to all responses."""
+    # Block inline scripts and external script sources as defense-in-depth against XSS
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "frame-ancestors 'none'"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
+
+# ── Thread-local stdout multiplexer ───────────────────────────────────────────
+# Redirects print() calls in job threads to their per-job queue without
+# interfering with the main thread's stdout.
+
+_local = threading.local()
+_original_stdout = sys.stdout
+
+
+class _MultiplexedStdout:
+    """sys.stdout replacement that routes writes to the current thread's stream."""
+
+    def write(self, text: str) -> int:
+        stream = getattr(_local, "stream", None)
+        if stream is not None:
+            return int(stream.write(text))
+        return _original_stdout.write(text)
+
+    def flush(self) -> None:
+        stream = getattr(_local, "stream", None)
+        if stream is not None:
+            stream.flush()
+        else:
+            _original_stdout.flush()
+
+    def isatty(self) -> bool:
+        return False
+
+    def fileno(self) -> int:
+        raise io.UnsupportedOperation("no fileno for multiplexed stdout")
+
+
+sys.stdout = _MultiplexedStdout()  # type: ignore[assignment]
+
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+class _QueueWriter:
+    """Writes stdout lines into a job's event queue as SSE-ready dicts.
+
+    Thread-safe: a job's page-workers run in separate threads but share one
+    writer, so ``write`` is guarded by a lock to avoid corrupting the line
+    buffer or interleaving partial lines.
+    """
+
+    def __init__(self, q: queue.Queue, events: list) -> None:
+        self._q = q
+        self._events = events
+        self._buf = ""
+        self._lock = threading.Lock()
+
+    def write(self, text: str) -> int:
+        with self._lock:
+            self._buf += text
+            while "\n" in self._buf:
+                line, self._buf = self._buf.split("\n", 1)
+                clean = _ANSI_RE.sub("", line)
+                if clean.strip() and not self._detect_structured(clean):
+                    self._emit("log", {"message": clean})
+        return len(text)
+
+    def flush(self) -> None:
+        pass
+
+    def _emit(self, event_type: str, data: dict) -> None:
+        msg = {"type": event_type, "data": data}
+        self._events.append(msg)
+        self._q.put(msg)
+
+    def _detect_structured(self, line: str) -> bool:
+        """Emit a structured event for recognized lines.
+
+        Returns ``True`` if a "progress"/"finding" event was emitted in place
+        of the generic "log" event, so the caller doesn't double-render the
+        same line via both handlers in run.js.
+        """
+        # Page start: "Testing: <url>"
+        m = re.search(r"Testing:\s+(https?://\S+)", line)
+        if m:
+            self._emit("progress", {"url": m.group(1), "message": line.strip()})
+            return True
+
+        # Finding: "[SEVERITY] <title>"
+        m = re.search(r"\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s+(.+)", line, re.IGNORECASE)
+        if m:
+            self._emit("finding", {
+                "severity": m.group(1).lower(),
+                "title": m.group(2).strip(),
+            })
+            return True
+
+        return False
+
+
+# ── Job management ─────────────────────────────────────────────────────────────
+
+_jobs: dict[str, dict[str, Any]] = {}
+_jobs_lock = threading.Lock()
+
+# Bounded pool that runs whole sessions (layer-2 concurrency). Replaces the old
+# unbounded thread-per-request model so the server applies backpressure. Size is
+# env-overridable; remember total browsers ≈ JOB_POOL_SIZE × config.workers.
+JOB_POOL_SIZE = int(os.environ.get("QA_AGENT_JOB_POOL_SIZE", "4"))
+
+# These globals assume a single interpreter (Flask dev server or gunicorn
+# --workers=1). Multi-process WSGI deployments are not supported; each process
+# would get its own pool and rate limiter, defeating the pool-size limit and
+# per-host rate budget.
+_pool_size = JOB_POOL_SIZE
+
+# Shared per-host navigation rate limit (req/s) across all jobs in the pool,
+# mirroring the CLI's --rate-limit default. Set QA_AGENT_RATE_LIMIT=0 to disable.
+DEFAULT_RATE_LIMIT = float(os.environ.get("QA_AGENT_RATE_LIMIT", "3.0"))
+_runner = BatchRunner(pool_size=JOB_POOL_SIZE, rate_limit=DEFAULT_RATE_LIMIT)
+_POOL_SIZE_MAX = 8
+
+
+def _make_job(job_id: str) -> dict:
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "queue": queue.Queue(),
+        "events": [],         # full replay buffer
+        "stop_event": threading.Event(),
+        "session_id": None,
+        "domain": None,
+        "total_findings": 0,
+        "current_url": None,
+        "pages_tested": 0,
+        "error": None,
+        "created_at": datetime.now().isoformat(),
+    }
+
+
+def _submit_job(job_id: str, config: TestConfig) -> None:
+    """Submit a session to the bounded pool, streaming output to the job queue.
+
+    The job's per-thread stdout stream is set via the agent's
+    ``worker_thread_init`` hook so output from BOTH the pool thread running the
+    session and any page-worker sub-threads it spawns routes to this job's queue
+    (thread-local stdout would otherwise miss the sub-threads).
+    """
+    job = _jobs[job_id]
+    q = job["queue"]
+    events = job["events"]
+    writer = _QueueWriter(q, events)
+    domain = urlparse(config.urls[0]).netloc.split(":")[0] if config.urls else "unknown"
+    job["domain"] = domain
+
+    def _init_stream() -> None:
+        _local.stream = writer
+
+    bjob = _runner.submit(
+        config,
+        worker_thread_init=_init_stream,
+        stop_event=job["stop_event"],
+    )
+    job["session_id"] = bjob.session_id
+    job["status"] = "running"
+
+    def _on_done(future) -> None:
+        try:
+            session = future.result()
+            job["total_findings"] = session.total_findings
+            job["pages_tested"] = len(session.pages_tested)
+            status = "stopped" if job["stop_event"].is_set() else "completed"
+            job["status"] = status
+            msg = {
+                "type": "complete",
+                "data": {
+                    "session_id": session.session_id,
+                    "domain": domain,
+                    "total_findings": session.total_findings,
+                    "status": status,
+                },
+            }
+        except Exception as exc:  # noqa: BLE001 - report failure to the client
+            job["status"] = "failed"
+            job["error"] = str(exc)
+            msg = {"type": "error", "data": {"message": str(exc)}}
+        events.append(msg)
+        q.put(msg)
+        q.put(None)  # sentinel — stream generator stops here
+        _local.stream = None
+
+    bjob.future.add_done_callback(_on_done)
+
+
+# ── Pages ─────────────────────────────────────────────────────────────────────
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+@app.route("/run/<job_id>")
+def run_view(job_id: str):
+    job = _jobs.get(job_id)
+    if job is None:
+        abort(404)
+    return render_template("run.html", job_id=job_id)
+
+
+@app.route("/sessions")
+def sessions_view():
+    return render_template("sessions.html")
+
+
+@app.route("/session/<domain>/<session_id>")
+def session_view(domain: str, session_id: str):
+    data = _load_session(domain, session_id)
+    if data is None:
+        abort(404)
+    return render_template("session.html", session=data, domain=domain)
+
+
+# ── API ────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/run", methods=["POST"])
+def api_run():
+    body = request.get_json(force=True, silent=True) or {}
+
+    # Validate URLs
+    urls = body.get("urls", [])
+    if not urls or not isinstance(urls, list):
+        return jsonify({"error": "urls is required and must be a non-empty list"}), 400
+
+    # Build config
+    try:
+        config = _build_config(body)
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    import uuid
+    job_id = str(uuid.uuid4())[:8]
+    job = _make_job(job_id)
+    with _jobs_lock:
+        _jobs[job_id] = job
+
+    _submit_job(job_id, config)
+
+    return jsonify({
+        "job_id": job_id,
+        "status": "running",
+        "stream_url": f"/api/stream/{job_id}",
+    }), 202
+
+
+@app.route("/api/stream/<job_id>")
+def api_stream(job_id: str):
+    job = _jobs.get(job_id)
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+
+    def generate():
+        # Replay buffered events for late-joining clients
+        cursor = 0
+        while True:
+            # Drain buffered events first
+            snapshot = job["events"]
+            while cursor < len(snapshot):
+                msg = snapshot[cursor]
+                cursor += 1
+                yield f"event: {msg['type']}\ndata: {json.dumps(msg['data'])}\n\n"
+
+            # Check if job is done
+            if job["status"] in ("completed", "failed", "stopped"):
+                break
+
+            # Wait for the next event via queue (timeout for keep-alive)
+            try:
+                msg = job["queue"].get(timeout=25)
+                if msg is None:
+                    break
+                # It's already in the events buffer, cursor will catch it on next loop
+            except queue.Empty:
+                yield ": keep-alive\n\n"
+
+    resp = Response(generate(), mimetype="text/event-stream")
+    resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Accel-Buffering"] = "no"
+    return resp
+
+
+@app.route("/api/status/<job_id>")
+def api_status(job_id: str):
+    job = _jobs.get(job_id)
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+
+    return jsonify({
+        "job_id": job_id,
+        "status": job["status"],
+        "session_id": job["session_id"],
+        "domain": job["domain"],
+        "total_findings": job["total_findings"],
+        "pages_tested": job["pages_tested"],
+        "error": job["error"],
+    })
+
+
+@app.route("/api/stop/<job_id>", methods=["POST"])
+def api_stop(job_id: str):
+    job = _jobs.get(job_id)
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+    if job["status"] in ("completed", "failed", "stopped"):
+        return jsonify({"error": "Job already finished"}), 400
+
+    job["stop_event"].set()
+    return jsonify({"job_id": job_id, "status": "stopping"})
+
+
+@app.route("/api/server-config", methods=["GET"])
+def api_server_config_get():
+    return jsonify({
+        "pool_size": _pool_size,
+        "pool_size_max": _POOL_SIZE_MAX,
+        "workers_max": 16,
+    })
+
+
+@app.route("/api/server-config", methods=["PATCH"])
+def api_server_config_patch():
+    global _runner, _pool_size
+    body = request.get_json(force=True, silent=True) or {}
+    if "pool_size" not in body:
+        return jsonify({"error": "pool_size is required"}), 400
+    try:
+        new_size = max(1, min(_POOL_SIZE_MAX, int(body["pool_size"])))
+    except (TypeError, ValueError):
+        return jsonify({"error": "pool_size must be an integer"}), 400
+
+    if new_size != _pool_size:
+        old_runner = _runner
+        _runner = BatchRunner(pool_size=new_size, rate_limit=DEFAULT_RATE_LIMIT)
+        _pool_size = new_size
+        old_runner.shutdown(wait=False)
+
+    return jsonify({"pool_size": _pool_size})
+
+
+@app.route("/api/jobs")
+def api_jobs():
+    """Return all active (non-completed) in-memory jobs."""
+    with _jobs_lock:
+        jobs_snapshot = list(_jobs.values())
+
+    result = []
+    for job in jobs_snapshot:
+        result.append({
+            "job_id": job["job_id"],
+            "status": job["status"],
+            "session_id": job["session_id"],
+            "domain": job["domain"],
+            "total_findings": job["total_findings"],
+            "pages_tested": job["pages_tested"],
+            "current_url": job["current_url"],
+            "error": job["error"],
+            "created_at": job["created_at"],
+        })
+
+    # Most recent first
+    result.sort(key=lambda j: j["created_at"], reverse=True)
+    return jsonify({"jobs": result})
+
+
+@app.route("/api/sessions")
+def api_sessions():
+    domain = request.args.get("domain")
+    limit = int(request.args.get("limit", 50))
+    offset = int(request.args.get("offset", 0))
+    return jsonify(_scan_sessions(domain_filter=domain, limit=limit, offset=offset))
+
+
+@app.route("/api/session/<domain>/<session_id>")
+def api_session_detail(domain: str, session_id: str):
+    data = _load_session(domain, session_id)
+    if data is None:
+        return jsonify({"error": "Session not found"}), 404
+    return jsonify(data)
+
+
+# Allowed HTML tags for nh3 sanitization of rendered markdown
+_NH3_ALLOWED_TAGS = {
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "br", "hr",
+    "ul", "ol", "li",
+    "pre", "code", "blockquote",
+    "table", "thead", "tbody", "tr", "th", "td",
+    "a", "strong", "em", "b", "i", "u", "s", "del", "ins",
+    "img", "details", "summary",
+}
+_NH3_ALLOWED_ATTRIBUTES: dict[str, set[str]] = {
+    "a": {"href", "title"},
+    "img": {"src", "alt", "title"},
+    "th": {"align"},
+    "td": {"align"},
+}
+
+
+def _sanitize_html(html: str) -> str:
+    """Sanitize HTML using nh3 to prevent XSS attacks."""
+    import nh3
+
+    return str(nh3.clean(
+        html,
+        tags=_NH3_ALLOWED_TAGS,
+        attributes=_NH3_ALLOWED_ATTRIBUTES,
+        link_rel="noopener noreferrer",
+        url_schemes={"http", "https", "mailto"},
+    ))
+
+
+@app.route("/files/<path:filepath>")
+def serve_file(filepath: str):
+    """Serve output files (reports, screenshots, recordings)."""
+    abs_path = OUTPUT_DIR / filepath
+    # Security: ensure path stays within OUTPUT_DIR
+    try:
+        abs_path.resolve().relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        abort(403)
+
+    if not abs_path.exists():
+        abort(404)
+
+    suffix = abs_path.suffix.lower()
+
+    if suffix == ".md":
+        content = abs_path.read_text(encoding="utf-8")
+        try:
+            import markdown as md_lib  # type: ignore[import-untyped]
+            html_body = md_lib.markdown(content, extensions=["fenced_code", "tables"])
+            # Sanitize rendered HTML to prevent XSS from finding titles/descriptions
+            # that captured payloads from tested sites
+            html_body = _sanitize_html(html_body)
+        except ImportError:
+            html_body = f"<pre>{html_lib.escape(content)}</pre>"
+        html = f"""<!doctype html><html><head><meta charset="utf-8">
+<title>{html_lib.escape(abs_path.name)}</title>
+<style>body{{font-family:system-ui;max-width:900px;margin:2rem auto;padding:0 1rem;line-height:1.6;}}
+pre{{background:#1e1e1e;color:#d4d4d4;padding:1rem;overflow-x:auto;border-radius:4px;}}
+</style></head><body>{html_body}</body></html>"""
+        return Response(html, mimetype="text/html")
+
+    if suffix == ".json":
+        data = json.loads(abs_path.read_text(encoding="utf-8"))
+        pretty = html_lib.escape(json.dumps(data, indent=2))
+        html = f"""<!doctype html><html><head><meta charset="utf-8">
+<title>{html_lib.escape(abs_path.name)}</title>
+<style>body{{background:#1e1e1e;color:#d4d4d4;font-family:monospace;font-size:13px;padding:1rem;margin:0;}}
+pre{{white-space:pre-wrap;word-break:break-all;}}</style></head>
+<body><pre>{pretty}</pre></body></html>"""
+        return Response(html, mimetype="text/html")
+
+    return send_file(abs_path)
+
+
+# ── Session discovery ──────────────────────────────────────────────────────────
+
+_session_cache: dict = {}
+_session_cache_time: float = 0.0
+_CACHE_TTL = 60.0  # seconds
+
+
+def _scan_sessions(
+    domain_filter: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    global _session_cache, _session_cache_time
+
+    now = time.time()
+    if now - _session_cache_time < _CACHE_TTL and not domain_filter:
+        sessions = _session_cache.get("all", [])
+    else:
+        sessions = _build_session_list()
+        _session_cache["all"] = sessions
+        _session_cache_time = now
+
+    if domain_filter:
+        sessions = [s for s in sessions if s["domain"] == domain_filter]
+
+    total = len(sessions)
+    return {
+        "sessions": sessions[offset : offset + limit],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+def _build_session_list() -> list:
+    sessions: list[dict] = []
+    if not OUTPUT_DIR.exists():
+        return sessions
+
+    for domain_dir in OUTPUT_DIR.iterdir():
+        if not domain_dir.is_dir():
+            continue
+        domain = domain_dir.name
+
+        for session_dir in domain_dir.iterdir():
+            if not session_dir.is_dir():
+                continue
+            session_id = session_dir.name
+
+            reports_dir = session_dir / "qa_reports"
+            if not reports_dir.exists():
+                continue
+
+            json_files = sorted(reports_dir.glob("qa_report_*.json"))
+            if not json_files:
+                continue
+
+            try:
+                data = json.loads(json_files[0].read_text(encoding="utf-8"))
+                meta = data.get("meta", {})
+                summary = data.get("summary", {})
+                pages_tested = summary.get("pages_tested", 0)
+                total_findings = summary.get("total_findings", 0)
+                stored_status = summary.get("status")
+                if stored_status is None:
+                    # Derive status from older reports that predate the status field
+                    if pages_tested == 0:
+                        stored_status = "no_pages_tested"
+                    elif total_findings > 0:
+                        stored_status = "issues_found"
+                    else:
+                        stored_status = "passed"
+                sessions.append({
+                    "session_id": meta.get("session_id", session_id),
+                    "domain": domain,
+                    "start_time": meta.get("start_time"),
+                    "end_time": meta.get("end_time"),
+                    "duration_seconds": meta.get("duration_seconds"),
+                    "urls": meta.get("config", {}).get("urls", []),
+                    "pages_tested": pages_tested,
+                    "total_findings": total_findings,
+                    "findings_by_severity": summary.get("findings_by_severity", {}),
+                    "status": stored_status,
+                })
+            except Exception:
+                continue
+
+    sessions.sort(key=lambda s: s.get("start_time") or "", reverse=True)
+    return sessions
+
+
+def _load_session(domain: str, session_id: str) -> dict | None:
+    session_dir = OUTPUT_DIR / domain / session_id
+    if not session_dir.exists():
+        return None
+
+    reports_dir = session_dir / "qa_reports"
+    json_files = sorted(reports_dir.glob("qa_report_*.json")) if reports_dir.exists() else []
+    if not json_files:
+        return None
+
+    try:
+        data = json.loads(json_files[0].read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    meta = data.get("meta", {})
+    summary = data.get("summary", {})
+    findings = data.get("findings", [])
+
+    # Collect report file links
+    reports: dict[str, str] = {}
+    screenshots: list[str] = []
+    recording: str | None = None
+
+    if reports_dir.exists():
+        for f in reports_dir.iterdir():
+            rel = f.relative_to(OUTPUT_DIR)
+            if f.suffix == ".md":
+                reports["markdown"] = f"/files/{rel}"
+            elif f.suffix == ".json":
+                reports.setdefault("json", f"/files/{rel}")
+            elif f.suffix == ".pdf":
+                reports["pdf"] = f"/files/{rel}"
+
+    screenshots_dir = session_dir / "screenshots"
+    if screenshots_dir.exists():
+        for f in sorted(screenshots_dir.iterdir()):
+            if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+                screenshots.append(f"/files/{f.relative_to(OUTPUT_DIR)}")
+
+    recordings_dir = session_dir / "recordings"
+    if recordings_dir.exists():
+        for f in recordings_dir.iterdir():
+            if f.suffix.lower() in (".webm", ".mp4"):
+                recording = f"/files/{f.relative_to(OUTPUT_DIR)}"
+                break
+
+    # Convert absolute screenshot_path values to OUTPUT_DIR-relative paths
+    # so the template can build correct /files/<rel> URLs.
+    for finding in findings:
+        sp = finding.get("screenshot_path")
+        if sp:
+            sp_path = Path(sp)
+            try:
+                rel = sp_path.relative_to(OUTPUT_DIR)
+                finding["screenshot_path"] = str(rel)
+            except ValueError:
+                pass  # already relative or outside OUTPUT_DIR — leave as-is
+
+    pages_tested = summary.get("pages_tested", 0)
+    total_findings = summary.get("total_findings", 0)
+    stored_status = summary.get("status")
+    if stored_status is None:
+        if pages_tested == 0:
+            stored_status = "no_pages_tested"
+        elif total_findings > 0:
+            stored_status = "issues_found"
+        else:
+            stored_status = "passed"
+
+    return {
+        "session_id": meta.get("session_id", session_id),
+        "domain": domain,
+        "start_time": meta.get("start_time"),
+        "end_time": meta.get("end_time"),
+        "duration_seconds": meta.get("duration_seconds"),
+        "config_summary": meta.get("config", {}),
+        "pages_tested": pages_tested,
+        "total_findings": total_findings,
+        "unique_findings": summary.get("unique_findings", 0),
+        "findings_by_severity": summary.get("findings_by_severity", {}),
+        "findings_by_category": summary.get("findings_by_category", {}),
+        "status": stored_status,
+        "findings": findings,
+        "reports": reports,
+        "screenshots": screenshots,
+        "recording": recording,
+    }
+
+
+# ── Config builder ─────────────────────────────────────────────────────────────
+
+def _parse_llm_provider(value: str) -> LLMProvider:
+    """Convert a string to an LLMProvider, defaulting to ANTHROPIC on unknown values."""
+    try:
+        return LLMProvider(value.lower())
+    except (ValueError, AttributeError):
+        return LLMProvider.ANTHROPIC
+
+
+def _build_config(body: dict) -> TestConfig:
+    """Convert JSON request body into a TestConfig."""
+    urls = body["urls"]
+    mode_str = body.get("mode", "focused").lower()
+    mode = TestMode.EXPLORE if mode_str == "explore" else TestMode.FOCUSED
+
+    fmt_strs = body.get("output_formats", ["console", "markdown", "json"])
+    fmt_map = {
+        "console": OutputFormat.CONSOLE,
+        "markdown": OutputFormat.MARKDOWN,
+        "json": OutputFormat.JSON,
+        "pdf": OutputFormat.PDF,
+    }
+    output_formats = [fmt_map[f] for f in fmt_strs if f in fmt_map]
+    # Always include JSON so sessions are discoverable
+    if OutputFormat.JSON not in output_formats:
+        output_formats.append(OutputFormat.JSON)
+
+    auth_data = body.get("auth") or {}
+    auth: AuthConfig | None = None
+    if any(auth_data.get(k) for k in ("username", "cookies", "headers", "auth_url")):
+        cookies = auth_data.get("cookies")
+        if isinstance(cookies, str) and cookies.strip():
+            try:
+                cookies = json.loads(cookies)
+            except json.JSONDecodeError:
+                cookies = None
+        headers = auth_data.get("headers")
+        if isinstance(headers, str) and headers.strip():
+            try:
+                headers = json.loads(headers)
+            except json.JSONDecodeError:
+                headers = None
+        auth = AuthConfig(
+            username=auth_data.get("username") or None,
+            password=auth_data.get("password") or None,
+            auth_url=auth_data.get("auth_url") or None,
+            username_selector=auth_data.get("username_selector") or None,
+            password_selector=auth_data.get("password_selector") or None,
+            submit_selector=auth_data.get("submit_selector") or None,
+            cookies=cookies,
+            headers=headers,
+        )
+
+    ss_data = body.get("screenshots") or {}
+    rec_data = body.get("recording") or {}
+
+    # Enforce screenshot dependencies matching CLI behaviour:
+    #   on_error and full_page require enabled
+    #   on_interaction requires on_error (mirrors --screenshots-all coupling)
+    ss_enabled = bool(ss_data.get("enabled", True))
+    ss_on_error = bool(ss_data.get("on_error", True)) and ss_enabled
+    ss_on_interaction = bool(ss_data.get("on_interaction", False)) and ss_on_error
+    ss_full_page = bool(ss_data.get("full_page", False)) and ss_enabled
+
+    return TestConfig(
+        urls=urls,
+        mode=mode,
+        output_formats=output_formats,
+        output_dir=str(body.get("output_dir") or OUTPUT_DIR),
+        headless=bool(body.get("headless", True)),
+        viewport_width=int(body.get("viewport_width", 1280)),
+        viewport_height=int(body.get("viewport_height", 720)),
+        timeout=int(body.get("timeout", 30000)),
+        max_depth=int(body.get("max_depth", 3)),
+        max_pages=int(body.get("max_pages", 100)),
+        max_interactions_per_page=int(body.get("max_interactions_per_page", 50)),
+        test_keyboard=bool(body.get("test_keyboard", True)),
+        test_mouse=bool(body.get("test_mouse", True)),
+        test_forms=bool(body.get("test_forms", True)),
+        test_accessibility=bool(body.get("test_accessibility", True)),
+        test_console_errors=bool(body.get("test_console_errors", True)),
+        test_network_errors=bool(body.get("test_network_errors", True)),
+        test_wcag_compliance=bool(body.get("test_wcag_compliance", False)),
+        enable_api_tests=bool(body.get("test_api", False)),
+        postman_collection=body.get("postman_collection") or None,
+        enable_code_quality=bool(body.get("run_code_quality", False)),
+        enable_security_checks=bool(body.get("run_security", False)),
+        enable_project_health=bool(body.get("run_health", False)),
+        enable_docker_tests=bool(body.get("test_docker", False)),
+        enable_container_security=bool(body.get("test_container_security", False)),
+        enable_web_security=bool(body.get("test_web_security", False)),
+        enable_performance_tests=bool(body.get("test_performance", False)),
+        locust_users=int(body.get("locust_users", 10)),
+        locust_duration=float(body.get("locust_duration", 5.0)),
+        ignore_patterns=body.get("ignore_patterns", []),
+        same_domain_only=bool(body.get("same_domain_only", True)),
+        instructions=body.get("instructions") or None,
+        llm_provider=_parse_llm_provider(body.get("llm_provider", "anthropic")),
+        ai_model=body.get("ai_model") or None,
+        use_plan_cache=bool(body.get("use_plan_cache", True)),
+        workers=max(1, min(16, int(body.get("workers", 1)))),
+        rate_limit=float(body.get("rate_limit", 3.0)),
+        auth=auth,
+        screenshots=ScreenshotConfig(
+            enabled=ss_enabled,
+            on_error=ss_on_error,
+            on_interaction=ss_on_interaction,
+            full_page=ss_full_page,
+        ),
+        recording=RecordingConfig(
+            enabled=bool(rec_data.get("enabled", False)),
+            video_size=rec_data.get("video_size", {"width": 1280, "height": 720}),
+        ),
+        invocation_context="web",
+    )
+
+
+# ── Entry point ────────────────────────────────────────────────────────────────
+
+def serve_web(host: str = "127.0.0.1", port: int = 5000, debug: bool = False) -> None:
+    """Start the Flask development server."""
+    print(f"QA Agent web interface running at http://{host}:{port}", file=_original_stdout)
+    app.run(host=host, port=port, debug=debug, threaded=True, use_reloader=False)
+
+
+def serve_web_cli() -> None:
+    """Entry point for `qa-agent web` subcommand."""
+    import argparse
+    parser = argparse.ArgumentParser(description="QA Agent Web Interface")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=5000, help="Port to listen on (default: 5000)")
+    parser.add_argument("--debug", action="store_true", help="Enable Flask debug mode")
+    args = parser.parse_args()
+    serve_web(host=args.host, port=args.port, debug=args.debug)

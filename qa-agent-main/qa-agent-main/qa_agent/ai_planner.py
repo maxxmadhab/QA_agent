@@ -1,0 +1,566 @@
+"""AI-powered test planner that interprets natural language instructions.
+
+Given a natural language description (feature spec, bug report, or general
+testing guidance), this module calls an LLM and returns a structured
+``TestPlan`` that the agent will execute alongside its standard test suite.
+
+The LLM interaction is handled by :mod:`qa_agent.llm_client`, which uses
+Python's built-in ``urllib`` — no third-party AI SDK required.
+"""
+
+import json
+import logging
+import time
+
+from .llm_client import (
+    DEFAULT_MODELS,
+    AnthropicClient,
+    LLMError,
+    LLMProvider,
+    LLMResponse,
+    OpenAIClient,
+    create_llm_client,
+)
+from .models import (
+    CustomStep,
+    FindingCategory,
+    Severity,
+    StepAction,
+    StepAssertion,
+    TestPlan,
+)
+
+_SYSTEM_PROMPT = """You are an expert QA test planner for web applications.
+
+You will be given:
+1. A target URL being tested
+2. Natural language instructions — a feature description, bug report, or testing guidance
+
+Your job is to generate a structured test plan that a Playwright-based QA agent will execute.
+
+The agent already runs standard tests for:
+- Keyboard navigation (tab order, focus visibility, keyboard traps)
+- Mouse interactions (click targets, hover states, WCAG 2.5.5 minimum target size)
+- Form handling (validation, error messages, label associations)
+- Accessibility (alt text, heading structure, color contrast, ARIA attributes)
+- Console and network errors
+
+Your test plan should focus on CUSTOM scenarios specific to the provided instructions:
+targeted user flows, specific feature behaviors, regression scenarios for bug reports,
+or edge cases mentioned in the instructions.
+
+Guidelines for writing good test steps:
+- Use resilient CSS selectors: prefer [data-testid], [name="..."], [role="..."], #id
+  over brittle descendant paths
+- Keep actions short and sequential; each step tests one scenario
+- Assertions should reflect exactly what the instructions say should (or should not) happen
+- Assign severity based on impact: "critical" for auth/data-loss flows, "high" for broken
+  core features, "medium" for degraded UX, "low" for cosmetic issues, "info" for
+  informational observations
+- Leave suggested_urls empty. The URLs to test are provided by the user; do not construct
+  or guess URLs. All navigation must happen through browser interactions (clicks, form
+  submissions, keyboard) — never by constructing a URL and navigating directly to it.
+
+Reliability warnings — populate the top-level "warnings" array when the instructions
+ask for something the executor cannot meaningfully verify:
+- CSS property or computed-style checks (background-color, opacity, font-size, etc.):
+  Playwright assertions cannot read CSS values. Warn and suggest a visual-regression
+  tool.
+- Animation/transition timing: if instructions imply checking mid-transition state,
+  a wait action is required before assertions; warn if timing is ambiguous.
+- "visible" assertions on the same element being hovered: the element was already
+  visible before the hover — the assertion trivially passes and validates nothing.
+Each warning string must be actionable: state what cannot be tested and suggest an
+alternative. Leave "warnings" as an empty array if none apply.
+
+Return ONLY valid JSON matching the schema — no markdown, no commentary."""
+
+
+_TEST_PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {
+            "type": "string",
+            "description": "One or two sentences describing what this test plan covers.",
+        },
+        "focus_areas": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "High-level areas of the application to focus on (e.g. 'login flow', 'checkout form').",
+        },
+        "custom_steps": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "description": {
+                        "type": "string",
+                        "description": "Human-readable description of what this step tests.",
+                    },
+                    "severity": {
+                        "type": "string",
+                        "enum": ["info", "low", "medium", "high", "critical"],
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "keyboard_navigation",
+                            "mouse_interaction",
+                            "form_handling",
+                            "accessibility",
+                            "console_error",
+                            "network_error",
+                            "visual_issue",
+                            "performance",
+                            "unexpected_behavior",
+                        ],
+                    },
+                    "actions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "click",
+                                        "fill",
+                                        "hover",
+                                        "press_key",
+                                        "wait",
+                                        "scroll",
+                                    ],
+                                },
+                                "selector": {
+                                    "type": "string",
+                                    "description": "CSS selector for the target element.",
+                                },
+                                "value": {
+                                    "type": "string",
+                                    "description": (
+                                        "For 'fill': text to type. "
+                                        "For 'press_key': key name (e.g. 'Enter', 'Tab'). "
+                                        "For 'wait': milliseconds as a string. "
+                                        "For 'scroll': 'down' or 'up'."
+                                    ),
+                                },
+                                "description": {"type": "string"},
+                            },
+                            "required": ["type"],
+                            "additionalProperties": False,
+                        },
+                    },
+                    "assertions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "visible",
+                                        "hidden",
+                                        "text_contains",
+                                        "url_contains",
+                                        "element_count",
+                                    ],
+                                },
+                                "selector": {
+                                    "type": "string",
+                                    "description": "CSS selector of the element to assert on.",
+                                },
+                                "value": {
+                                    "type": "string",
+                                    "description": (
+                                        "For 'text_contains': expected substring. "
+                                        "For 'url_contains': expected URL fragment. "
+                                        "For 'element_count': expected count as a string."
+                                    ),
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "What passing this assertion proves.",
+                                },
+                            },
+                            "required": ["type"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["description", "severity", "category", "actions", "assertions"],
+                "additionalProperties": False,
+            },
+        },
+        "suggested_urls": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Always return an empty array. URLs are provided by the user; do not construct or guess any URLs.",
+        },
+        "notes": {
+            "type": "string",
+            "description": "Any extra context, caveats, or observations for the tester.",
+        },
+        "warnings": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Reliability warnings. Populate when instructions ask for CSS property checks, "
+                "animation timing, or other things Playwright assertions cannot verify. "
+                "Each string must explain what cannot be tested and suggest an alternative. "
+                "Leave empty when none apply."
+            ),
+        },
+    },
+    "required": ["summary", "focus_areas", "custom_steps", "suggested_urls", "notes", "warnings"],
+    "additionalProperties": False,
+}
+
+
+# How long to wait before each retry attempt (seconds)
+_RETRY_DELAYS = (2, 5)   # up to 3 attempts total: initial + 2 retries
+
+# Timeout for a single API call (seconds)
+_API_TIMEOUT = 60
+
+# Max characters of raw API response to include in error messages
+_MAX_RAW_RESPONSE_IN_ERROR = 300
+
+# Required top-level keys in the JSON returned by the model
+_REQUIRED_KEYS = frozenset({"summary", "focus_areas", "custom_steps", "warnings"})
+
+
+_SEVERITY_MAP: dict[str, Severity] = {
+    "info": Severity.INFO,
+    "low": Severity.LOW,
+    "medium": Severity.MEDIUM,
+    "high": Severity.HIGH,
+    "critical": Severity.CRITICAL,
+}
+
+_CATEGORY_MAP: dict[str, FindingCategory] = {
+    "keyboard_navigation": FindingCategory.KEYBOARD_NAVIGATION,
+    "mouse_interaction": FindingCategory.MOUSE_INTERACTION,
+    "form_handling": FindingCategory.FORM_HANDLING,
+    "accessibility": FindingCategory.ACCESSIBILITY,
+    "console_error": FindingCategory.CONSOLE_ERROR,
+    "network_error": FindingCategory.NETWORK_ERROR,
+    "visual_issue": FindingCategory.VISUAL_ISSUE,
+    "performance": FindingCategory.PERFORMANCE,
+    "unexpected_behavior": FindingCategory.UNEXPECTED_BEHAVIOR,
+}
+
+_KNOWN_ACTION_TYPES = frozenset({
+    "click", "fill", "hover", "press_key", "wait", "navigate", "scroll"
+})
+_KNOWN_ASSERTION_TYPES = frozenset({
+    "visible", "hidden", "text_contains", "url_contains", "element_count"
+})
+
+logger = logging.getLogger(__name__)
+
+
+def _repair_truncated_json(text: str) -> str | None:
+    """Attempt to repair truncated JSON by closing open strings/containers."""
+    if not text.strip().startswith("{"):
+        return None
+
+    stack: list[str] = []
+    in_string = False
+    escaped = False
+
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+
+        if ch == '"':
+            in_string = True
+        elif ch in "{[":
+            stack.append(ch)
+        elif ch in "}]":
+            if not stack:
+                return None
+            opener = stack.pop()
+            if (opener == "{" and ch != "}") or (opener == "[" and ch != "]"):
+                return None
+
+    if not in_string and not stack:
+        return None
+
+    # Can't safely repair mid-escape sequence - unclear what the intended escape was
+    if escaped:
+        return None
+
+    repaired = text
+    if in_string:
+        repaired += '"'
+    for opener in reversed(stack):
+        repaired += "}" if opener == "{" else "]"
+
+    return repaired
+
+
+def validate_plan(plan: "TestPlan") -> list[str]:
+    """Return rule-based reliability warnings for a generated TestPlan.
+
+    Detects four patterns:
+    1. Steps with no assertions (actions run, nothing validated)
+    2. Unknown assertion types (silently pass — guaranteed false negative)
+    3. hover action with no subsequent wait before assertions (CSS transitions need settle time)
+    4. hover + visible assertion on the same selector (trivially passes)
+    """
+    warnings: list[str] = []
+    for i, step in enumerate(plan.custom_steps, start=1):
+        prefix = f'Step {i} ("{step.description}")'
+
+        # Rule 1: no assertions
+        if not step.assertions:
+            warnings.append(
+                f"{prefix}: has actions but no assertions — the step runs but validates "
+                "nothing. Add at least one assertion to confirm the expected outcome."
+            )
+
+        # Rule 2: unknown assertion types (silently pass in the executor)
+        for assertion in step.assertions:
+            if assertion.type not in _KNOWN_ASSERTION_TYPES:
+                warnings.append(
+                    f"{prefix}: assertion type '{assertion.type}' is not supported and "
+                    f"will always pass (false negative). Supported types: "
+                    f"{', '.join(sorted(_KNOWN_ASSERTION_TYPES))}."
+                )
+
+        # Track hover selectors and whether the last non-wait action was a hover
+        hover_selectors: set[str] = set()
+        last_non_wait_was_hover = False
+        for action in step.actions:
+            if action.type == "hover":
+                if action.selector:
+                    hover_selectors.add(action.selector)
+                last_non_wait_was_hover = True
+            elif action.type == "wait":
+                last_non_wait_was_hover = False  # wait after hover is correct
+            else:
+                last_non_wait_was_hover = False
+
+        # Rule 3: hover immediately before assertions with no wait
+        if last_non_wait_was_hover and step.assertions:
+            warnings.append(
+                f"{prefix}: ends with a hover but has no 'wait' before assertions. "
+                "CSS transitions need settle time. Add {\"type\": \"wait\", \"value\": \"300\"} "
+                "after the hover."
+            )
+
+        # Rule 4: hover + visible on same selector (trivially passes)
+        for assertion in step.assertions:
+            if assertion.type == "visible" and assertion.selector in hover_selectors:
+                warnings.append(
+                    f"{prefix}: asserts '{assertion.selector}' is visible after hovering "
+                    "it, but the element was already visible — this trivially passes. "
+                    "Assert a *different* element that appears on hover (e.g. a tooltip)."
+                )
+
+    return warnings
+
+
+class AIPlannerClient:
+    """Calls an LLM to turn natural language instructions into a ``TestPlan``.
+
+    Supports Anthropic and OpenAI via the lightweight :mod:`qa_agent.llm_client`
+    module (stdlib ``urllib`` only — no third-party AI SDK required).
+    """
+
+    def __init__(
+        self,
+        provider: LLMProvider = LLMProvider.ANTHROPIC,
+        model: str | None = None,
+    ) -> None:
+        self.provider = provider
+        # None means "use the provider's default model" (resolved lazily)
+        self.model = model
+        self._llm: AnthropicClient | OpenAIClient | None = None  # lazy-initialised on first use
+
+    @property
+    def _client(self) -> AnthropicClient | OpenAIClient:
+        if self._llm is None:
+            self._llm = create_llm_client(self.provider, self.model)
+        return self._llm
+
+    @_client.setter
+    def _client(self, value) -> None:
+        """Allow tests to inject a mock client directly."""
+        self._llm = value
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def plan(self, instructions: str, base_url: str) -> TestPlan:
+        """Generate a :class:`TestPlan` from natural language instructions.
+
+        Args:
+            instructions: A feature description, bug report, or testing guidance.
+            base_url: The primary URL under test (gives the LLM context).
+
+        Returns:
+            A structured :class:`TestPlan` ready for :class:`CustomTester`.
+
+        Raises:
+            LLMError: Propagated after all retries are exhausted.
+            ValueError: If the response cannot be parsed into a valid plan.
+        """
+        user_message = (
+            f"Target URL: {base_url}\n\n"
+            f"Instructions:\n{instructions}\n\n"
+            "Generate a test plan as a JSON object."
+        )
+
+        response: LLMResponse = self._call_with_retry(user_message)
+        data = self._parse_json(response.text)
+        return self._parse_plan(data)
+
+    def _call_with_retry(self, user_message: str) -> LLMResponse:
+        """Call the LLM with exponential-backoff retry on transient errors.
+
+        Retries when :attr:`LLMError.retryable` is ``True`` (rate limits,
+        server errors, connection problems, timeouts).  Non-retryable errors
+        are re-raised immediately.
+        """
+        last_exc: Exception | None = None
+        attempts = 1 + len(_RETRY_DELAYS)
+
+        for attempt, delay in enumerate(
+            [None] + list(_RETRY_DELAYS),  # None = no pre-sleep on first attempt
+            start=1,
+        ):
+            if delay is not None:
+                time.sleep(delay)
+            try:
+                return self._client.complete(
+                    system=_SYSTEM_PROMPT,
+                    user=user_message,
+                    max_tokens=4096,
+                    timeout=_API_TIMEOUT,
+                )
+            except LLMError as exc:
+                if exc.retryable and attempt < attempts:
+                    last_exc = exc
+                    continue
+                raise  # non-retryable or final attempt — surface immediately
+
+        raise last_exc  # type: ignore[misc]
+
+    def _parse_json(self, text: str) -> dict:
+        """Strip optional markdown fences and parse JSON, with a clean error on failure."""
+        # Some models wrap the JSON in markdown code fences despite instructions not to.
+        stripped = text.strip()
+        if stripped.startswith("```"):
+            # Remove the opening fence line (```json or just ```)
+            stripped = stripped.split("\n", 1)[1] if "\n" in stripped else ""
+            # Remove the closing fence
+            closing = stripped.rfind("```")
+            if closing != -1:
+                stripped = stripped[:closing]
+            stripped = stripped.strip()
+
+        try:
+            data = json.loads(stripped)
+        except json.JSONDecodeError as exc:
+            repaired = _repair_truncated_json(stripped)
+            if repaired is not None:
+                try:
+                    data = json.loads(repaired)
+                except json.JSONDecodeError:
+                    pass  # Repair failed, fall through to original error
+                else:
+                    if isinstance(data, dict):
+                        logger.warning(
+                            "Recovered from truncated LLM response (%d chars repaired). "
+                            "Original length: %d, repaired length: %d",
+                            len(repaired) - len(stripped), len(stripped), len(repaired)
+                        )
+                        return data
+            preview = text[:_MAX_RAW_RESPONSE_IN_ERROR]
+            suffix = "…" if len(text) > _MAX_RAW_RESPONSE_IN_ERROR else ""
+            raise ValueError(
+                f"LLM returned invalid JSON: {exc}\n\nResponse preview:\n{preview}{suffix}"
+            ) from exc
+
+        if not isinstance(data, dict):
+            raise ValueError(f"LLM returned JSON but not an object (got {type(data).__name__}).")
+
+        missing = _REQUIRED_KEYS - data.keys()
+        if missing:
+            preview = text[:_MAX_RAW_RESPONSE_IN_ERROR]
+            suffix = "…" if len(text) > _MAX_RAW_RESPONSE_IN_ERROR else ""
+            raise ValueError(
+                f"LLM response is missing required fields: {sorted(missing)}. "
+                f"The model may have returned a different schema.\n\nResponse preview:\n{preview}{suffix}"
+            )
+
+        return data
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _parse_plan(self, data: dict) -> TestPlan:
+        custom_steps: list[CustomStep] = []
+
+        for step_data in data.get("custom_steps", []):
+            actions = [
+                StepAction(
+                    type=a["type"],
+                    selector=a.get("selector"),
+                    value=a.get("value"),
+                    description=a.get("description"),
+                )
+                for a in step_data.get("actions", [])
+            ]
+            assertions = [
+                StepAssertion(
+                    type=a["type"],
+                    selector=a.get("selector"),
+                    value=a.get("value"),
+                    description=a.get("description"),
+                )
+                for a in step_data.get("assertions", [])
+            ]
+            severity = _SEVERITY_MAP.get(step_data.get("severity", "medium"), Severity.MEDIUM)
+            category = _CATEGORY_MAP.get(
+                step_data.get("category", "unexpected_behavior"),
+                FindingCategory.UNEXPECTED_BEHAVIOR,
+            )
+            custom_steps.append(
+                CustomStep(
+                    description=step_data.get("description", ""),
+                    actions=actions,
+                    assertions=assertions,
+                    severity=severity,
+                    category=category,
+                )
+            )
+
+        llm_warnings: list[str] = [
+            w for w in data.get("warnings", []) if isinstance(w, str) and w.strip()
+        ]
+        plan = TestPlan(
+            summary=data.get("summary", ""),
+            focus_areas=data.get("focus_areas", []),
+            custom_steps=custom_steps,
+            suggested_urls=[],  # Never trust AI-constructed URLs; user supplies all URLs
+            notes=data.get("notes", ""),
+            warnings=llm_warnings,
+        )
+        plan.warnings = plan.warnings + validate_plan(plan)
+        return plan
+
+
+def effective_model(provider: LLMProvider, model: str | None) -> str:
+    """Return the model that will actually be used (provider default if *model* is None)."""
+    return model or DEFAULT_MODELS[provider]

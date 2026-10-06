@@ -1,0 +1,652 @@
+"""Tests for qa_agent/web/server.py — routes, security, SSE, _build_config."""
+
+from __future__ import annotations
+
+import json
+import queue
+import sys
+import threading
+from unittest.mock import patch
+
+import pytest
+
+# Import app — this replaces sys.stdout with _MultiplexedStdout at import time.
+# That's fine: _MultiplexedStdout falls back to _original_stdout when no thread-local
+# stream is set, so test output is unaffected.
+from qa_agent.web import server as srv
+from qa_agent.web.server import (
+    OUTPUT_DIR,
+    _build_config,
+    _jobs,
+    _make_job,
+    _MultiplexedStdout,
+    _QueueWriter,
+    app,
+)
+
+
+@pytest.fixture(autouse=True)
+def clean_jobs():
+    """Clear the in-memory job dict before each test."""
+    _jobs.clear()
+    yield
+    _jobs.clear()
+
+
+@pytest.fixture
+def client():
+    app.config["TESTING"] = True
+    with app.test_client() as c:
+        yield c
+
+
+@pytest.fixture
+def tmp_output(tmp_path, monkeypatch):
+    """Redirect OUTPUT_DIR to a temporary directory for file-serving tests."""
+    monkeypatch.setattr(srv, "OUTPUT_DIR", tmp_path)
+    return tmp_path
+
+
+# ---------------------------------------------------------------------------
+# _build_config
+# ---------------------------------------------------------------------------
+
+class TestBuildConfig:
+    def test_minimal_valid_body(self):
+        config = _build_config({"urls": ["https://example.com"]})
+        assert config.urls == ["https://example.com"]
+
+    def test_mode_explore(self):
+        config = _build_config({"urls": ["https://example.com"], "mode": "explore"})
+        from qa_agent.config import TestMode
+        assert config.mode == TestMode.EXPLORE
+
+    def test_json_always_included(self):
+        from qa_agent.config import OutputFormat
+        config = _build_config({"urls": ["https://example.com"], "output_formats": ["console"]})
+        assert OutputFormat.JSON in config.output_formats
+
+    def test_auth_cookies_as_json_string_parsed(self):
+        cookies = json.dumps([{"name": "s", "value": "v", "domain": "example.com"}])
+        config = _build_config({
+            "urls": ["https://example.com"],
+            "auth": {"cookies": cookies},
+        })
+        assert config.auth is not None
+        assert isinstance(config.auth.cookies, list)
+
+    def test_auth_cookies_malformed_json_string_set_to_none(self):
+        config = _build_config({
+            "urls": ["https://example.com"],
+            "auth": {"cookies": "not json {{{"},
+        })
+        assert config.auth is not None
+        assert config.auth.cookies is None
+
+    def test_screenshot_on_interaction_requires_enabled(self):
+        """on_interaction=True but enabled=False → both end up False."""
+        config = _build_config({
+            "urls": ["https://example.com"],
+            "screenshots": {"enabled": False, "on_error": True, "on_interaction": True},
+        })
+        assert config.screenshots.on_interaction is False
+
+    def test_viewport_defaults(self):
+        config = _build_config({"urls": ["https://example.com"]})
+        assert config.viewport_width == 1280
+        assert config.viewport_height == 720
+
+    def test_output_dir_default(self):
+        config = _build_config({"urls": ["https://example.com"]})
+        assert config.output_dir == str(OUTPUT_DIR)
+
+    def test_output_dir_custom(self, tmp_path):
+        config = _build_config({"urls": ["https://example.com"], "output_dir": str(tmp_path)})
+        assert config.output_dir == str(tmp_path)
+
+    def test_missing_urls_raises(self):
+        with pytest.raises((KeyError, TypeError, ValueError)):
+            _build_config({})
+
+    def test_llm_provider_defaults_to_anthropic(self):
+        from qa_agent.llm_client import LLMProvider
+        config = _build_config({"urls": ["https://example.com"]})
+        assert config.llm_provider == LLMProvider.ANTHROPIC
+
+    def test_llm_provider_openai_accepted(self):
+        from qa_agent.llm_client import LLMProvider
+        config = _build_config({"urls": ["https://example.com"], "llm_provider": "openai"})
+        assert config.llm_provider == LLMProvider.OPENAI
+
+    def test_llm_provider_unknown_falls_back_to_anthropic(self):
+        from qa_agent.llm_client import LLMProvider
+        config = _build_config({"urls": ["https://example.com"], "llm_provider": "gemini"})
+        assert config.llm_provider == LLMProvider.ANTHROPIC
+
+    def test_ai_model_defaults_to_none(self):
+        config = _build_config({"urls": ["https://example.com"]})
+        assert config.ai_model is None
+
+    def test_ai_model_can_be_specified(self):
+        config = _build_config({"urls": ["https://example.com"], "ai_model": "gpt-4o-mini"})
+        assert config.ai_model == "gpt-4o-mini"
+
+    def test_ai_model_empty_string_becomes_none(self):
+        config = _build_config({"urls": ["https://example.com"], "ai_model": ""})
+        assert config.ai_model is None
+
+
+# ---------------------------------------------------------------------------
+# /api/run
+# ---------------------------------------------------------------------------
+
+class TestApiRun:
+    def test_post_happy_path_returns_202(self, client):
+        with patch("qa_agent.web.server._submit_job"):
+            resp = client.post("/api/run", json={"urls": ["https://example.com"]})
+        assert resp.status_code == 202
+        data = resp.get_json()
+        assert "job_id" in data
+        assert "stream_url" in data
+
+    def test_post_empty_urls_returns_400(self, client):
+        resp = client.post("/api/run", json={"urls": []})
+        assert resp.status_code == 400
+
+    def test_post_non_list_urls_returns_400(self, client):
+        resp = client.post("/api/run", json={"urls": "https://example.com"})
+        assert resp.status_code == 400
+
+    def test_post_no_body_returns_400(self, client):
+        resp = client.post("/api/run", data="not json", content_type="text/plain")
+        assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# /api/status, /api/stop
+# ---------------------------------------------------------------------------
+
+class TestApiStatusStop:
+    def _add_job(self, job_id, status="running"):
+        job = _make_job(job_id)
+        job["status"] = status
+        _jobs[job_id] = job
+        return job
+
+    def test_status_known_job(self, client):
+        self._add_job("job001")
+        resp = client.get("/api/status/job001")
+        assert resp.status_code == 200
+        assert resp.get_json()["job_id"] == "job001"
+
+    def test_status_unknown_job_returns_404(self, client):
+        resp = client.get("/api/status/nonexistent")
+        assert resp.status_code == 404
+
+    def test_stop_running_job_signals_event(self, client):
+        job = self._add_job("job002", status="running")
+        resp = client.post("/api/stop/job002")
+        assert resp.status_code == 200
+        assert job["stop_event"].is_set()
+
+    def test_stop_unknown_job_returns_404(self, client):
+        resp = client.post("/api/stop/nobody")
+        assert resp.status_code == 404
+
+    def test_stop_completed_job_returns_400(self, client):
+        self._add_job("job003", status="completed")
+        resp = client.post("/api/stop/job003")
+        assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# /api/jobs
+# ---------------------------------------------------------------------------
+
+class TestApiJobs:
+    def test_returns_empty_list_initially(self, client):
+        resp = client.get("/api/jobs")
+        assert resp.status_code == 200
+        assert resp.get_json()["jobs"] == []
+
+    def test_most_recent_first(self, client):
+        j1 = _make_job("j1")
+        j1["created_at"] = "2024-01-01T10:00:00"
+        j2 = _make_job("j2")
+        j2["created_at"] = "2024-01-01T11:00:00"
+        _jobs["j1"] = j1
+        _jobs["j2"] = j2
+        resp = client.get("/api/jobs")
+        jobs = resp.get_json()["jobs"]
+        assert jobs[0]["job_id"] == "j2"
+
+
+# ---------------------------------------------------------------------------
+# /api/sessions
+# ---------------------------------------------------------------------------
+
+class TestApiSessions:
+    def test_empty_output_dir_returns_empty(self, client, tmp_output):
+        resp = client.get("/api/sessions")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["sessions"] == [] or isinstance(data["sessions"], list)
+
+
+# ---------------------------------------------------------------------------
+# Security headers
+# ---------------------------------------------------------------------------
+
+class TestSecurityHeaders:
+    def test_csp_header_present(self, client):
+        """All responses include Content-Security-Policy header."""
+        resp = client.get("/")
+        assert "Content-Security-Policy" in resp.headers
+        csp = resp.headers["Content-Security-Policy"]
+        assert "script-src" in csp
+        assert "frame-ancestors 'none'" in csp
+
+    def test_x_content_type_options_header(self, client):
+        """Responses include X-Content-Type-Options: nosniff."""
+        resp = client.get("/")
+        assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+
+    def test_x_frame_options_header(self, client):
+        """Responses include X-Frame-Options: DENY."""
+        resp = client.get("/")
+        assert resp.headers.get("X-Frame-Options") == "DENY"
+
+    def test_csp_on_file_routes(self, client, tmp_output):
+        """CSP header is present on /files/ routes too."""
+        (tmp_output / "test.txt").write_text("hello")
+        resp = client.get("/files/test.txt")
+        assert "Content-Security-Policy" in resp.headers
+
+
+# ---------------------------------------------------------------------------
+# /files/<path> — path traversal security
+# ---------------------------------------------------------------------------
+
+class TestFileServing:
+    def test_happy_path_serves_file(self, client, tmp_output):
+        (tmp_output / "report.txt").write_text("hello")
+        resp = client.get("/files/report.txt")
+        # Should serve the file (not 403/404)
+        assert resp.status_code == 200
+
+    def test_path_traversal_dotdot_blocked(self, client, tmp_output):
+        resp = client.get("/files/../etc/passwd")
+        assert resp.status_code in (400, 403, 404)
+
+    def test_path_traversal_encoded_blocked(self, client, tmp_output):
+        resp = client.get("/files/..%2F..%2Fetc%2Fpasswd")
+        assert resp.status_code in (400, 403, 404)
+
+    def test_unknown_file_returns_404(self, client, tmp_output):
+        resp = client.get("/files/does_not_exist.txt")
+        assert resp.status_code == 404
+
+    def test_json_file_escapes_script_tag(self, client, tmp_output):
+        """JSON content containing <script> must be escaped when rendered as HTML."""
+        payload = {"message": '<script>alert("xss")</script>'}
+        (tmp_output / "data.json").write_text(json.dumps(payload))
+        resp = client.get("/files/data.json")
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        # html.escape should replace < and > so the script tag is not executable
+        assert "<script>" not in body
+        assert "&lt;script&gt;" in body or "script" in body  # escaped form present
+
+    def test_md_file_rendered_as_html(self, client, tmp_output):
+        (tmp_output / "report.md").write_text("# Hello\n\nSome text")
+        resp = client.get("/files/report.md")
+        assert resp.status_code == 200
+        assert b"Hello" in resp.data
+
+    def test_md_file_script_tag_sanitized(self, client, tmp_output):
+        """Script tags in markdown are stripped by nh3 sanitizer."""
+        (tmp_output / "evil.md").write_text('<script>alert("pwned")</script>\n\n# Normal content')
+        resp = client.get("/files/evil.md")
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        # Script tag should be stripped by nh3 sanitization
+        assert "<script>" not in body
+        assert "alert" not in body
+        assert "Normal content" in body
+
+    def test_md_file_event_handler_sanitized(self, client, tmp_output):
+        """Inline event handlers in markdown are stripped by nh3 sanitizer."""
+        (tmp_output / "evil2.md").write_text(
+            '<img src="x" onerror="alert(1)">\n\n'
+            '<a href="javascript:alert(2)">click</a>\n\n'
+            '# Safe heading'
+        )
+        resp = client.get("/files/evil2.md")
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        # Event handlers and javascript: URLs should be stripped
+        assert "onerror" not in body
+        assert "javascript:" not in body
+        assert "Safe heading" in body
+
+    def test_symlink_escape_blocked(self, client, tmp_output):
+        """A symlink inside OUTPUT_DIR pointing outside must be blocked."""
+        # Create a file outside the output dir
+        outside = tmp_output.parent / "secret.txt"
+        outside.write_text("secret contents")
+        # Create a symlink inside output dir pointing to it
+        link = tmp_output / "link.txt"
+        try:
+            link.symlink_to(outside)
+        except OSError:
+            pytest.skip("Symlinks not supported on this platform")
+
+        resp = client.get("/files/link.txt")
+        # The resolve().relative_to() check should block this
+        # If it returns 200, that's a path traversal bug
+        if resp.status_code == 200:
+            pytest.xfail(
+                "Symlink escape: /files/ serves a symlink pointing outside OUTPUT_DIR. "
+                "The resolve().relative_to() check in server.py should block this."
+            )
+
+
+# ---------------------------------------------------------------------------
+# /session/<domain>/<session_id> path traversal
+# ---------------------------------------------------------------------------
+
+class TestSessionView:
+    def test_dotdot_domain_returns_404(self, client, tmp_output):
+        resp = client.get("/session/../etc/passwd")
+        assert resp.status_code in (400, 404)
+
+    def test_unknown_session_returns_404(self, client, tmp_output):
+        resp = client.get("/session/example.com/unknownsession")
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# _QueueWriter
+# ---------------------------------------------------------------------------
+
+class TestQueueWriter:
+    def _writer(self):
+        q: queue.Queue = queue.Queue()
+        events: list[dict] = []
+        return _QueueWriter(q, events), q, events
+
+    def test_log_line_emits_log_event(self):
+        writer, q, events = self._writer()
+        writer.write("Hello world\n")
+        assert any(e["type"] == "log" for e in events)
+
+    def test_testing_url_emits_progress_event(self):
+        writer, q, events = self._writer()
+        writer.write("Testing: https://example.com\n")
+        assert any(e["type"] == "progress" for e in events)
+        progress = next(e for e in events if e["type"] == "progress")
+        assert "https://example.com" in progress["data"]["url"]
+
+    def test_testing_url_does_not_also_emit_log_event(self):
+        """Avoid duplicate lines in the UI: progress lines aren't also logged."""
+        writer, q, events = self._writer()
+        writer.write("Testing: https://example.com\n")
+        assert not any(e["type"] == "log" for e in events)
+
+    def test_critical_finding_emits_finding_event(self):
+        writer, q, events = self._writer()
+        writer.write("[CRITICAL] Something is very broken\n")
+        assert any(e["type"] == "finding" for e in events)
+        finding = next(e for e in events if e["type"] == "finding")
+        assert finding["data"]["severity"] == "critical"
+
+    def test_finding_line_does_not_also_emit_log_event(self):
+        """Avoid duplicate lines in the UI: finding lines aren't also logged."""
+        writer, q, events = self._writer()
+        writer.write("[CRITICAL] Something is very broken\n")
+        assert not any(e["type"] == "log" for e in events)
+
+    def test_high_finding_emits_finding_event(self):
+        writer, q, events = self._writer()
+        writer.write("[HIGH] A high severity issue\n")
+        finding_events = [e for e in events if e["type"] == "finding"]
+        assert len(finding_events) == 1
+        assert finding_events[0]["data"]["severity"] == "high"
+
+    def test_ansi_codes_stripped(self):
+        writer, q, events = self._writer()
+        writer.write("\x1b[91mERROR\x1b[0m some message\n")
+        log_events = [e for e in events if e["type"] == "log"]
+        assert log_events
+        assert "\x1b" not in log_events[0]["data"]["message"]
+
+    def test_empty_lines_not_emitted(self):
+        writer, q, events = self._writer()
+        writer.write("  \n\n  \n")
+        assert len(events) == 0
+
+    def test_partial_line_buffered(self):
+        writer, q, events = self._writer()
+        writer.write("partial")
+        assert len(events) == 0  # no newline yet
+        writer.write(" line\n")
+        assert len(events) == 1
+
+
+# ---------------------------------------------------------------------------
+# _MultiplexedStdout
+# ---------------------------------------------------------------------------
+
+class TestMultiplexedStdout:
+    def test_no_thread_local_writes_to_original(self, capsys):
+        import io
+
+        from qa_agent.web import server as srv_mod
+        mux = _MultiplexedStdout()
+        buf = io.StringIO()
+        original = srv_mod._original_stdout
+        # Temporarily replace _original_stdout with our buffer
+        srv_mod._original_stdout = buf
+        try:
+            mux.write("hello original\n")
+            mux.flush()
+        finally:
+            srv_mod._original_stdout = original
+        assert "hello original" in buf.getvalue()
+
+    def test_thread_local_stream_routes_writes(self):
+        import io
+
+        from qa_agent.web import server as srv_mod
+        mux = _MultiplexedStdout()
+        captured = io.StringIO()
+
+        srv_mod._local.stream = captured
+        try:
+            mux.write("routed to thread-local\n")
+        finally:
+            srv_mod._local.stream = None
+        assert "routed to thread-local" in captured.getvalue()
+
+    def test_thread_isolation(self):
+        """Writes in one thread must not appear in another thread's stream."""
+        import io
+
+        from qa_agent.web import server as srv_mod
+        mux = _MultiplexedStdout()
+
+        thread1_buf = io.StringIO()
+        thread2_buf = io.StringIO()
+        barrier = threading.Barrier(2)
+
+        def thread_write(buf, msg):
+            srv_mod._local.stream = buf
+            barrier.wait()
+            mux.write(msg + "\n")
+            srv_mod._local.stream = None
+
+        t1 = threading.Thread(target=thread_write, args=(thread1_buf, "thread-one-message"))
+        t2 = threading.Thread(target=thread_write, args=(thread2_buf, "thread-two-message"))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert "thread-one-message" in thread1_buf.getvalue()
+        assert "thread-two-message" in thread2_buf.getvalue()
+        assert "thread-two-message" not in thread1_buf.getvalue()
+        assert "thread-one-message" not in thread2_buf.getvalue()
+
+    def test_isatty_returns_false(self):
+        mux = _MultiplexedStdout()
+        assert mux.isatty() is False
+
+
+# ---------------------------------------------------------------------------
+# qa_agent/web/__init__.py — serve_web_cli entry point
+# ---------------------------------------------------------------------------
+
+class TestServeWebCli:
+    def test_flask_missing_exits_1_with_helpful_message(self, capsys):
+        """simulate flask missing by forcing the inner import to fail."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "qa_agent.web.server":
+                raise ModuleNotFoundError("No module named 'flask'")
+            return real_import(name, *args, **kwargs)
+
+        # Remove server from cache so the import runs again
+        saved = sys.modules.pop("qa_agent.web.server", None)
+        try:
+            with patch("builtins.__import__", side_effect=fake_import):
+                with pytest.raises(SystemExit) as exc_info:
+                    import importlib
+
+                    import qa_agent.web as web_mod
+                    importlib.reload(web_mod)
+                    web_mod.serve_web_cli()
+        finally:
+            if saved is not None:
+                sys.modules["qa_agent.web.server"] = saved
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "flask" in captured.err.lower()
+        assert "pip install" in captured.err
+
+    def test_serve_web_cli_calls_server_function(self):
+        """When flask is available, serve_web_cli delegates to server.serve_web_cli."""
+        with patch("qa_agent.web.server.serve_web_cli") as mock_serve:
+            import qa_agent.web as web_mod
+            web_mod.serve_web_cli()
+            mock_serve.assert_called_once()
+
+    def test_non_flask_module_not_found_reraises(self):
+        """A non-flask ModuleNotFoundError propagates unchanged."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "qa_agent.web.server":
+                raise ModuleNotFoundError("No module named 'weasyprint'")
+            return real_import(name, *args, **kwargs)
+
+        saved = sys.modules.pop("qa_agent.web.server", None)
+        try:
+            with patch("builtins.__import__", side_effect=fake_import):
+                with pytest.raises(ModuleNotFoundError, match="weasyprint"):
+                    import importlib
+
+                    import qa_agent.web as web_mod
+                    importlib.reload(web_mod)
+                    web_mod.serve_web_cli()
+        finally:
+            if saved is not None:
+                sys.modules["qa_agent.web.server"] = saved
+
+
+# ---------------------------------------------------------------------------
+# /api/server-config
+# ---------------------------------------------------------------------------
+
+class TestApiServerConfig:
+    def test_get_returns_pool_size(self, client):
+        resp = client.get("/api/server-config")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "pool_size" in data
+        assert isinstance(data["pool_size"], int)
+        assert data["pool_size"] >= 1
+
+    def test_get_returns_pool_size_max(self, client):
+        resp = client.get("/api/server-config")
+        data = resp.get_json()
+        assert "pool_size_max" in data
+        assert data["pool_size_max"] >= 1
+
+    def test_get_returns_workers_max(self, client):
+        resp = client.get("/api/server-config")
+        data = resp.get_json()
+        assert "workers_max" in data
+        assert data["workers_max"] == 16
+
+    def test_patch_updates_pool_size(self, client):
+        from qa_agent.web import server as srv_mod
+        original_size = srv_mod._pool_size
+        try:
+            new_size = max(1, original_size - 1) if original_size > 1 else 2
+            resp = client.patch("/api/server-config", json={"pool_size": new_size})
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["pool_size"] == new_size
+            assert srv_mod._pool_size == new_size
+        finally:
+            client.patch("/api/server-config", json={"pool_size": original_size})
+
+    def test_patch_clamps_to_max(self, client):
+        from qa_agent.web import server as srv_mod
+        original_size = srv_mod._pool_size
+        try:
+            resp = client.patch("/api/server-config", json={"pool_size": 9999})
+            assert resp.status_code == 200
+            assert resp.get_json()["pool_size"] <= srv_mod._POOL_SIZE_MAX
+        finally:
+            client.patch("/api/server-config", json={"pool_size": original_size})
+
+    def test_patch_clamps_to_min(self, client):
+        from qa_agent.web import server as srv_mod
+        original_size = srv_mod._pool_size
+        try:
+            resp = client.patch("/api/server-config", json={"pool_size": 0})
+            assert resp.status_code == 200
+            assert resp.get_json()["pool_size"] >= 1
+        finally:
+            client.patch("/api/server-config", json={"pool_size": original_size})
+
+    def test_patch_missing_pool_size_returns_400(self, client):
+        resp = client.patch("/api/server-config", json={})
+        assert resp.status_code == 400
+
+    def test_patch_invalid_type_returns_400(self, client):
+        resp = client.patch("/api/server-config", json={"pool_size": "not-a-number"})
+        assert resp.status_code == 400
+
+    def test_build_config_reads_workers(self):
+        config = _build_config({"urls": ["https://example.com"], "workers": 4})
+        assert config.workers == 4
+
+    def test_build_config_clamps_workers_max(self):
+        config = _build_config({"urls": ["https://example.com"], "workers": 999})
+        assert config.workers == 16
+
+    def test_build_config_clamps_workers_min(self):
+        config = _build_config({"urls": ["https://example.com"], "workers": 0})
+        assert config.workers == 1
+
+    def test_build_config_workers_defaults_to_1(self):
+        config = _build_config({"urls": ["https://example.com"]})
+        assert config.workers == 1

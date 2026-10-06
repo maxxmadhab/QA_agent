@@ -1,0 +1,16 @@
+.venv
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+htmlcov
+qa-agent-output
+qa_reports
+screenshots
+recordings
+node_modules
+.DS_Store
