@@ -19,8 +19,10 @@ from .llm_client import (
     LLMProvider,
     LLMResponse,
     OpenAIClient,
+    OmniKeyClient,
     create_llm_client,
 )
+
 from .models import (
     CustomStep,
     FindingCategory,
@@ -383,13 +385,14 @@ class AIPlannerClient:
         self.provider = provider
         # None means "use the provider's default model" (resolved lazily)
         self.model = model
-        self._llm: AnthropicClient | OpenAIClient | None = None  # lazy-initialised on first use
+        self._llm: AnthropicClient | OpenAIClient | OmniKeyClient | None = None  # lazy-initialised on first use
 
     @property
-    def _client(self) -> AnthropicClient | OpenAIClient:
+    def _client(self) -> AnthropicClient | OpenAIClient | OmniKeyClient:
         if self._llm is None:
             self._llm = create_llm_client(self.provider, self.model)
         return self._llm
+
 
     @_client.setter
     def _client(self, value) -> None:
@@ -494,57 +497,81 @@ class AIPlannerClient:
         if not isinstance(data, dict):
             raise ValueError(f"LLM returned JSON but not an object (got {type(data).__name__}).")
 
-        missing = _REQUIRED_KEYS - data.keys()
-        if missing:
+        has_cases = ("custom_steps" in data) or ("test_cases" in data) or ("test_plan" in data) or ("scenarios" in data)
+        if not has_cases:
             preview = text[:_MAX_RAW_RESPONSE_IN_ERROR]
             suffix = "…" if len(text) > _MAX_RAW_RESPONSE_IN_ERROR else ""
             raise ValueError(
-                f"LLM response is missing required fields: {sorted(missing)}. "
+                f"LLM response is missing required fields (test_cases, scenarios, or custom_steps). "
                 f"The model may have returned a different schema.\n\nResponse preview:\n{preview}{suffix}"
             )
 
+        if not data.get("summary"):
+            data["summary"] = data.get("title") or data.get("test_plan_name") or data.get("description") or "AI-generated test plan"
+        if "focus_areas" not in data or not isinstance(data.get("focus_areas"), list):
+            data["focus_areas"] = []
+        if "warnings" not in data or not isinstance(data.get("warnings"), list):
+            data["warnings"] = []
+
+
         return data
+
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
     def _parse_plan(self, data: dict) -> TestPlan:
-        custom_steps: list[CustomStep] = []
+        from .nl_safety import sanitize_and_validate_test_cases, NLSafetyViolation
 
-        for step_data in data.get("custom_steps", []):
-            actions = [
-                StepAction(
-                    type=a["type"],
-                    selector=a.get("selector"),
-                    value=a.get("value"),
-                    description=a.get("description"),
+        custom_steps: list[CustomStep] = []
+        nl_test_cases: list[dict] = []
+        safety_warnings: list[str] = []
+
+        try:
+            validated_cases = sanitize_and_validate_test_cases(data)
+            nl_test_cases = [tc.to_dict() for tc in validated_cases]
+            custom_steps = [tc.to_custom_step() for tc in validated_cases]
+        except NLSafetyViolation as exc:
+            safety_warnings.append(f"Safety violation: {exc}")
+        except Exception as exc:
+            safety_warnings.append(f"Validation issue: {exc}")
+
+        # Fallback to direct custom_steps parsing if validated_cases failed but raw custom_steps existed
+        if not custom_steps and "custom_steps" in data:
+            for step_data in data.get("custom_steps", []):
+                actions = [
+                    StepAction(
+                        type=a["type"],
+                        selector=a.get("selector"),
+                        value=a.get("value"),
+                        description=a.get("description"),
+                    )
+                    for a in step_data.get("actions", [])
+                ]
+                assertions = [
+                    StepAssertion(
+                        type=a["type"],
+                        selector=a.get("selector"),
+                        value=a.get("value"),
+                        description=a.get("description"),
+                    )
+                    for a in step_data.get("assertions", [])
+                ]
+                severity = _SEVERITY_MAP.get(step_data.get("severity", "medium"), Severity.MEDIUM)
+                category = _CATEGORY_MAP.get(
+                    step_data.get("category", "unexpected_behavior"),
+                    FindingCategory.UNEXPECTED_BEHAVIOR,
                 )
-                for a in step_data.get("actions", [])
-            ]
-            assertions = [
-                StepAssertion(
-                    type=a["type"],
-                    selector=a.get("selector"),
-                    value=a.get("value"),
-                    description=a.get("description"),
+                custom_steps.append(
+                    CustomStep(
+                        description=step_data.get("description", ""),
+                        actions=actions,
+                        assertions=assertions,
+                        severity=severity,
+                        category=category,
+                    )
                 )
-                for a in step_data.get("assertions", [])
-            ]
-            severity = _SEVERITY_MAP.get(step_data.get("severity", "medium"), Severity.MEDIUM)
-            category = _CATEGORY_MAP.get(
-                step_data.get("category", "unexpected_behavior"),
-                FindingCategory.UNEXPECTED_BEHAVIOR,
-            )
-            custom_steps.append(
-                CustomStep(
-                    description=step_data.get("description", ""),
-                    actions=actions,
-                    assertions=assertions,
-                    severity=severity,
-                    category=category,
-                )
-            )
 
         llm_warnings: list[str] = [
             w for w in data.get("warnings", []) if isinstance(w, str) and w.strip()
@@ -555,10 +582,12 @@ class AIPlannerClient:
             custom_steps=custom_steps,
             suggested_urls=[],  # Never trust AI-constructed URLs; user supplies all URLs
             notes=data.get("notes", ""),
-            warnings=llm_warnings,
+            warnings=llm_warnings + safety_warnings,
+            nl_test_cases=nl_test_cases,
         )
         plan.warnings = plan.warnings + validate_plan(plan)
         return plan
+
 
 
 def effective_model(provider: LLMProvider, model: str | None) -> str:

@@ -74,7 +74,211 @@
 </div>
 {% endif %}
 
+<!-- AI QA Narrative Analysis -->
+<div class="card" id="ai-analysis-card">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <h2 style="margin: 0;">📊 AI QA Narrative Analysis</h2>
+    <div>
+      <button id="run-analysis-btn" class="btn btn-primary"
+              data-domain="{{ session.domain or domain }}"
+              data-session-id="{{ session.session_id }}"
+              style="padding: 6px 14px; font-size: 0.9em; cursor: pointer;">
+        {% if session.summary %}🔄 Re-analyze with OmniKey{% else %}⚡ Generate AI Analysis with OmniKey{% endif %}
+      </button>
+      <button id="export-pdf-btn" class="btn btn-secondary"
+              style="padding: 6px 14px; font-size: 0.9em; cursor: pointer; margin-left: 8px;">
+        📑 Export PDF
+      </button>
+    </div>
+  </div>
+
+  <div id="ai-analysis-content">
+    {% if session.summary %}
+      <div style="background: #f8fafc; border-left: 4px solid #3b82f6; padding: 14px 18px; border-radius: 4px; margin-bottom: 1.2rem;">
+        <h3 style="margin: 0 0 6px 0; color: #1e3a8a; font-size: 1.05em;">Executive Summary</h3>
+        <p style="margin: 0; color: #334155; line-height: 1.6;">{{ session.summary.executive_summary }}</p>
+      </div>
+
+      {% if session.summary.cross_browser_analysis %}
+      <div style="margin-bottom: 1.2rem;">
+        <h4 style="margin: 0 0 6px 0; color: #0f172a; font-size: 0.95em;">Cross-Browser Comparative Analysis</h4>
+        <p style="margin: 0; color: #475569; font-size: 0.9em; line-height: 1.5;">{{ session.summary.cross_browser_analysis }}</p>
+      </div>
+      {% endif %}
+
+      {% if session.summary.root_cause_clusters %}
+      <div style="margin-bottom: 1.2rem;">
+        <h4 style="margin: 0 0 8px 0; color: #0f172a; font-size: 0.95em;">Root-Cause Clusters</h4>
+        <div style="display: grid; gap: 10px;">
+          {% for cluster in session.summary.root_cause_clusters %}
+          <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px;">
+            <strong style="color: #0f172a;">{{ cluster.label }}</strong>
+            <p style="margin: 4px 0; color: #475569; font-size: 0.88em;"><strong>Root Cause:</strong> {{ cluster.root_cause }}</p>
+            <p style="margin: 4px 0; color: #166534; font-size: 0.88em;"><strong>Suggested Fix:</strong> {{ cluster.suggested_fix }}</p>
+            {% if cluster.finding_titles %}
+            <small style="color: #64748b;">Affects: {{ cluster.finding_titles | join(', ') }}</small>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% if session.summary.priority_recommendations %}
+      <div style="margin-bottom: 1rem;">
+        <h4 style="margin: 0 0 8px 0; color: #0f172a; font-size: 0.95em;">Prioritized Remediation Plan</h4>
+        <ol style="margin: 0; padding-left: 1.2rem; color: #334155; font-size: 0.9em; line-height: 1.6;">
+          {% for rec in session.summary.priority_recommendations %}
+          <li>{{ rec }}</li>
+          {% endfor %}
+        </ol>
+      </div>
+      {% endif %}
+
+    {% else %}
+      <p style="color: #64748b; margin: 0;">No AI narrative summary generated yet. Click above to run automatic analysis with OmniKey AI.</p>
+    {% endif %}
+  </div>
+</div>
+
+
+<!-- Cross-Browser Matrix -->
+{% if session.cross_browser_comparison %}
+<div class="card">
+  <h2>🌐 Cross-Browser Compatibility Matrix</h2>
+  <div class="table-wrapper" style="margin-bottom: 1rem;">
+    <table class="findings-table">
+      <thead>
+        <tr>
+          <th>Browser</th>
+          <th>Version</th>
+          <th>Status</th>
+          <th>Duration</th>
+          <th>Findings</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b, info in session.cross_browser_comparison.browser_matrix.items() %}
+        <tr>
+          <td><strong>{{ b | title }}</strong></td>
+          <td>{{ info.version or 'N/A' }}</td>
+          <td>
+            <span class="badge badge-{% if info.status == 'passed' %}info{% elif info.status == 'issues_found' %}high{% else %}critical{% endif %}">
+              {{ info.status | upper }}
+            </span>
+          </td>
+          <td>{{ info.duration_seconds }}s</td>
+          <td>{{ info.total_findings }}</td>
+          <td><small>{{ info.error or '-' }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if session.cross_browser_comparison.total_common_findings > 0 %}
+  <p><strong>Common Issues in All Browsers:</strong> {{ session.cross_browser_comparison.total_common_findings }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Natural Language Test Cases & Execution Outcomes -->
+{% if session.nl_execution_results %}
+<div class="card">
+  <h2>Natural Language Executable Test Cases</h2>
+  {% for tc in session.nl_execution_results %}
+  <div style="border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 16px; padding: 16px; background: #fafbfc;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <div>
+        <strong style="font-size: 1.1em; color: #1e293b;">[{{ tc.id }}] {{ tc.title }}</strong>
+      </div>
+      <div>
+        <span class="badge badge-{% if tc.status == 'passed' %}info{% elif tc.status == 'failed' %}high{% else %}critical{% endif %}">
+          {{ tc.status | upper }}
+        </span>
+        <span style="font-size: 0.85em; color: #64748b; margin-left: 8px;">{{ tc.total_duration_ms }}ms</span>
+      </div>
+    </div>
+
+    <!-- Steps -->
+    {% if tc.step_results %}
+    <h4 style="margin: 8px 0 4px; font-size: 0.9em; text-transform: uppercase; color: #64748b;">Action Steps</h4>
+    <div class="table-wrapper" style="margin-bottom: 12px;">
+      <table class="findings-table" style="font-size: 0.9em;">
+        <thead>
+          <tr>
+            <th style="width: 40px;">#</th>
+            <th style="width: 90px;">Action</th>
+            <th>Target / Value</th>
+            <th style="width: 80px;">Status</th>
+            <th style="width: 70px;">Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for step in tc.step_results %}
+          <tr>
+            <td>{{ step.step_index }}</td>
+            <td><code>{{ step.action }}</code></td>
+            <td>
+              {{ step.description or (step.target ~ (' ' ~ step.value if step.value else '')) }}
+              {% if step.error_message %}<div style="color: #dc2626; font-size: 0.85em;">{{ step.error_message }}</div>{% endif %}
+            </td>
+            <td>
+              <span class="badge badge-{% if step.status == 'passed' %}info{% else %}critical{% endif %}">
+                {{ step.status }}
+              </span>
+            </td>
+            <td>{{ step.duration_ms }}ms</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <!-- Assertions -->
+    {% if tc.assertion_results %}
+    <h4 style="margin: 8px 0 4px; font-size: 0.9em; text-transform: uppercase; color: #64748b;">Assertions</h4>
+    <div class="table-wrapper">
+      <table class="findings-table" style="font-size: 0.9em;">
+        <thead>
+          <tr>
+            <th style="width: 40px;">#</th>
+            <th style="width: 110px;">Assertion</th>
+            <th>Target</th>
+            <th>Expected</th>
+            <th>Actual</th>
+            <th style="width: 80px;">Status</th>
+            <th style="width: 70px;">Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for as in tc.assertion_results %}
+          <tr>
+            <td>{{ as.assertion_index }}</td>
+            <td><code>{{ as.type }}</code></td>
+            <td><code>{{ as.target or '-' }}</code></td>
+            <td>{{ as.expected_value or '-' }}</td>
+            <td>{{ as.actual_value or '-' }}</td>
+            <td>
+              <span class="badge badge-{% if as.status == 'passed' %}info{% else %}high{% endif %}">
+                {{ as.status }}
+              </span>
+            </td>
+            <td>{{ as.duration_ms }}ms</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <!-- Findings table -->
+
 {% if session.findings %}
 <div class="card">
   <h2>Findings</h2>
@@ -151,5 +355,6 @@
 
 {% block scripts %}
 <script type="application/json" id="session-config-data">{{ session.config_summary | tojson }}</script>
-<script src="/static/session.js"></script>
+<script src="/static/session.js?v=20261027_4"></script>
 {% endblock %}
+

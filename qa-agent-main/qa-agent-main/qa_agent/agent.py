@@ -15,7 +15,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .concurrency import Frontier, PageIndexer
 from .config import OutputFormat, TestConfig, TestMode
-from .models import Finding, FindingCategory, PageAnalysis, Severity, TestPlan, TestSession
+from .models import BrowserResult, Finding, FindingCategory, PageAnalysis, Severity, TestPlan, TestSession
 from .rate_limiter import HostRateLimiter
 from .reporters import ConsoleReporter, JSONReporter, MarkdownReporter, PDFReporter
 from .reporters.base import BaseReporter
@@ -74,6 +74,7 @@ class QAAgent:
         self.test_plan: TestPlan | None = None
         self.stop_event: threading.Event | None = None  # Set by web server to request graceful stop
         self._reauth_count: int = 0  # Guards against infinite re-auth loops on bad credentials
+        self._active_browser_version: str | None = None
 
         # If instructions explicitly mention logout/destructive flows, honour the user's intent
         # and disable the default destructive-link heuristic in explore mode.
@@ -148,25 +149,11 @@ class QAAgent:
         if self.config.instructions:
             self._generate_test_plan()
 
-        if self.config.workers > 1:
-            self._run_concurrent()
+        if len(self.config.browsers) > 1:
+            self._run_cross_browser()
         else:
-            with self._factory()() as playwright:
-                self._setup_browser(playwright)
-
-                try:
-                    # Authenticate if needed
-                    if self.config.auth:
-                        self._authenticate()
-
-                    # Run tests based on mode
-                    if self.config.mode == TestMode.FOCUSED:
-                        self._run_focused_mode()
-                    else:
-                        self._run_explore_mode()
-
-                finally:
-                    self._cleanup()
+            browser_name = self.config.browsers[0] if self.config.browsers else "chromium"
+            self._run_single_browser_lifecycle(browser_name)
 
         # Run Part 1 DevOps & API Testers
         self._run_devops_testers()
@@ -181,6 +168,98 @@ class QAAgent:
         self._generate_reports()
 
         return self.session
+
+    def _run_cross_browser(self):
+        """Execute test run across all selected browsers, saving separate results."""
+        self.console.print_progress(
+            f"Starting cross-browser testing across: {', '.join(self.config.browsers)}"
+        )
+        for browser_name in self.config.browsers:
+            self.console.print_progress(f"\n--- Testing in Browser: {browser_name.upper()} ---")
+            self._run_single_browser_lifecycle(browser_name)
+
+    def _run_single_browser_lifecycle(self, browser_name: str):
+        """Run the testing lifecycle for one specific browser engine."""
+        b_start = datetime.now()
+        b_result = BrowserResult(
+            browser=browser_name,
+            start_time=b_start,
+            status="passed",
+        )
+
+        prev_browser_type = self.config.browser_type
+        prev_screenshot_dir = self.config.screenshots.output_dir
+        self.config.browser_type = browser_name
+
+        if len(self.config.browsers) > 1:
+            self.config.screenshots.output_dir = os.path.join(prev_screenshot_dir, browser_name)
+            os.makedirs(self.config.screenshots.output_dir, exist_ok=True)
+
+        self.visited_urls.clear()
+        self.urls_to_visit.clear()
+
+        pages_before = len(self.session.pages_tested)
+
+        try:
+            if self.config.workers > 1:
+                self._run_concurrent()
+            else:
+                with self._factory()() as playwright:
+                    try:
+                        self._setup_browser(playwright, browser_name=browser_name)
+                    except Exception as launch_err:
+                        error_str = str(launch_err)
+                        self.console.print_error(
+                            f"Browser '{browser_name}' failed to launch: {error_str}"
+                        )
+                        is_unavail = "executable" in error_str.lower() or "not found" in error_str.lower()
+                        b_result.status = "unavailable" if is_unavail else "error"
+                        b_result.error_message = error_str
+                        b_result.end_time = datetime.now()
+                        b_result.duration_seconds = (b_result.end_time - b_start).total_seconds()
+                        self.session.browser_results[browser_name] = b_result
+                        return
+
+                    try:
+                        if self.config.auth:
+                            self._authenticate()
+
+                        if self.config.mode == TestMode.FOCUSED:
+                            self._run_focused_mode()
+                        else:
+                            self._run_explore_mode()
+                    finally:
+                        self._cleanup()
+
+            b_result.end_time = datetime.now()
+            b_result.duration_seconds = (b_result.end_time - b_start).total_seconds()
+            b_result.browser_version = self._active_browser_version
+
+            new_pages = self.session.pages_tested[pages_before:]
+            b_result.pages_tested = [p.url for p in new_pages]
+
+            new_findings: list[Finding] = []
+            for p in new_pages:
+                new_findings.extend(p.findings)
+
+            b_result.findings = new_findings
+            b_result.total_findings = len(new_findings)
+            b_result.status = "issues_found" if new_findings else "passed"
+            b_result.screenshot_paths = [
+                f.screenshot_path for f in new_findings if f.screenshot_path
+            ]
+            self.session.browser_results[browser_name] = b_result
+
+        except Exception as exc:
+            self.console.print_error(f"Error during testing in {browser_name}: {exc}")
+            b_result.status = "error"
+            b_result.error_message = str(exc)
+            b_result.end_time = datetime.now()
+            b_result.duration_seconds = (b_result.end_time - b_start).total_seconds()
+            self.session.browser_results[browser_name] = b_result
+        finally:
+            self.config.browser_type = prev_browser_type
+            self.config.screenshots.output_dir = prev_screenshot_dir
 
     def _run_devops_testers(self):
         """Execute Part 1 DevOps testers (API, Newman, Code Quality, Security, Health) if enabled."""
@@ -295,6 +374,9 @@ class QAAgent:
             self._apply_test_plan()
             if self.test_plan and self.test_plan.warnings:
                 self.session.config_summary["plan_warnings"] = self.test_plan.warnings
+            if self.test_plan and hasattr(self.test_plan, "nl_test_cases") and self.test_plan.nl_test_cases:
+                self.session.nl_test_cases = self.test_plan.nl_test_cases
+
 
         except LLMError as exc:
             self.console.print_progress(
@@ -360,9 +442,18 @@ class QAAgent:
         """Return the playwright context-manager factory (real or injected mock)."""
         return self._playwright_factory if self._playwright_factory is not None else sync_playwright
 
-    def _launch_browser(self, playwright: Playwright) -> Browser:
-        """Launch a Chromium browser with the configured options."""
-        return playwright.chromium.launch(headless=self.config.headless)
+    def _launch_browser(self, playwright: Playwright, browser_name: str | None = None) -> Browser:
+        """Launch a browser engine with the configured options."""
+        name = (browser_name or self.config.browser_type or "chromium").lower()
+        if name == "firefox":
+            engine = playwright.firefox
+        elif name == "webkit":
+            engine = playwright.webkit
+        else:
+            engine = playwright.chromium
+        browser = engine.launch(headless=self.config.headless)
+        self._active_browser_version = getattr(browser, "version", None)
+        return browser
 
     def _new_context_page(self, browser: Browser, storage_state=None) -> tuple[BrowserContext, Page]:
         """Create a browser context + page with the configured options.
@@ -396,9 +487,9 @@ class QAAgent:
         page = context.new_page()
         return context, page
 
-    def _setup_browser(self, playwright):
+    def _setup_browser(self, playwright, browser_name: str | None = None):
         """Set up the shared browser/context/page for the sequential code path."""
-        self.browser = self._launch_browser(playwright)
+        self.browser = self._launch_browser(playwright, browser_name=browser_name)
         self.context, self.page = self._new_context_page(self.browser)
 
         # Set up error detector
@@ -683,13 +774,19 @@ class QAAgent:
         try:
             start_time = time.time()
             self._rate_limiter.acquire(_hostname(url))
-            response = page.goto(url, wait_until="domcontentloaded")
+            response = page.goto(url, wait_until="domcontentloaded", timeout=self.config.timeout)
             if response is None or response.status < 400:
-                page.wait_for_load_state("networkidle", timeout=10000)
+                try:
+                    page.wait_for_load_state("networkidle", timeout=10000)
+                except Exception:
+                    # networkidle timeout is common on sites with background analytics/streaming;
+                    # domcontentloaded succeeded, so the page is ready for interaction and testing
+                    pass
             load_time = (time.time() - start_time) * 1000
         except Exception as e:
             self.console.print_error(f"Error loading page: {e}")
             return
+
 
         # If we were redirected to the login page, re-authenticate once and continue.
         # Guard against infinite loops when credentials are wrong.
@@ -720,6 +817,8 @@ class QAAgent:
                 severity=severity,
                 url=url,
                 metadata={"status": status, "status_text": response.status_text},
+                browser=self.config.browser_type,
+                browser_version=self._active_browser_version,
             )
             self.console.print_finding(finding)
             page_analysis = PageAnalysis(
@@ -818,6 +917,18 @@ class QAAgent:
             all_findings.extend(findings)
             for f in findings:
                 self.console.print_finding(f)
+            if self.session is not None:
+                self.session.nl_execution_results.extend(tester.execution_results)
+                if hasattr(self.test_plan, "nl_test_cases") and self.test_plan.nl_test_cases and not self.session.nl_test_cases:
+                    self.session.nl_test_cases = self.test_plan.nl_test_cases
+
+
+        # Attach browser context metadata to all findings
+        for finding in all_findings:
+            if not finding.browser:
+                finding.browser = self.config.browser_type
+            if not finding.browser_version:
+                finding.browser_version = self._active_browser_version
 
         # Take screenshot if there were errors
         if all_findings and self.config.screenshots.on_error:

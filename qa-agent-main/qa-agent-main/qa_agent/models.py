@@ -70,6 +70,9 @@ class Finding:
     metadata: dict[str, Any] = field(default_factory=dict)
     # Populated during deduplication: all URLs where this issue was seen
     affected_urls: list[str] = field(default_factory=list)
+    # Browser engine context where this finding was detected
+    browser: str | None = None
+    browser_version: str | None = None
 
     def to_dict(self) -> dict:
         """Convert finding to dictionary."""
@@ -111,6 +114,8 @@ class Finding:
             "raw_error": self.raw_error,
             "metadata": self.metadata,
             "affected_urls": self.affected_urls,
+            "browser": self.browser,
+            "browser_version": self.browser_version,
         }
 
 
@@ -185,6 +190,7 @@ class TestPlan:
     suggested_urls: list[str] = field(default_factory=list)
     notes: str = ""
     warnings: list[str] = field(default_factory=list)
+    nl_test_cases: list[dict[str, Any]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +244,7 @@ class SummaryResult:
     priority_recommendations: list[str] = field(default_factory=list)
     root_cause_clusters: list[RootCauseCluster] = field(default_factory=list)
     false_positive_candidates: list[str] = field(default_factory=list)
+    cross_browser_analysis: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -253,6 +260,40 @@ class SummaryResult:
                 for c in self.root_cause_clusters
             ],
             "false_positive_candidates": self.false_positive_candidates,
+            "cross_browser_analysis": self.cross_browser_analysis,
+        }
+
+
+
+@dataclass
+class BrowserResult:
+    """Execution results and metadata for an individual browser engine."""
+    browser: str  # e.g. "chromium", "firefox", "webkit"
+    browser_version: str | None = None
+    status: str = "passed"  # "passed", "failed", "error", "unavailable"
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    duration_seconds: float = 0.0
+    pages_tested: list[str] = field(default_factory=list)
+    total_findings: int = 0
+    findings: list[Finding] = field(default_factory=list)
+    error_message: str | None = None
+    screenshot_paths: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "browser": self.browser,
+            "browser_version": self.browser_version,
+            "status": self.status,
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "duration_seconds": round(self.duration_seconds, 2),
+            "pages_tested": self.pages_tested,
+            "total_findings": self.total_findings,
+            "findings_count": len(self.findings),
+            "findings": [f.to_dict() for f in self.findings],
+            "error_message": self.error_message,
+            "screenshot_paths": self.screenshot_paths,
         }
 
 
@@ -270,6 +311,9 @@ class TestSession:
     findings_by_category: dict[str, int] = field(default_factory=dict)
     recording_path: str | None = None
     summary: "SummaryResult | None" = None
+    browser_results: dict[str, BrowserResult] = field(default_factory=dict)
+    nl_test_cases: list[dict[str, Any]] = field(default_factory=list)
+    nl_execution_results: list[dict[str, Any]] = field(default_factory=list)
 
     def add_finding(self, finding: Finding):
         """Add a standalone finding (e.g. API, security, code quality) and update totals."""
@@ -347,6 +391,74 @@ class TestSession:
             return "issues_found"
         return "passed"
 
+    def get_cross_browser_comparison(self) -> dict:
+        """Generate consolidated comparison of findings across browsers.
+
+        Identifies:
+        - common_findings: issues occurring in all successfully tested browsers
+        - browser_specific_findings: issues occurring only in specific browser(s)
+        - browser_matrix: per-browser status, version, duration, error, and findings count
+        """
+        successful_browsers = [
+            b for b, res in self.browser_results.items()
+            if res.status in ("passed", "failed", "issues_found")
+        ]
+
+        finding_browser_map: dict[tuple, dict[str, Any]] = {}
+        for b_name, b_res in self.browser_results.items():
+            for f in b_res.findings:
+                norm_url = _normalize_url(f.url)
+                cat_val = f.category.value if isinstance(f.category, Enum) else str(f.category)
+                sev_val = f.severity.value if isinstance(f.severity, Enum) else str(f.severity)
+                key = (f.title, cat_val, sev_val, norm_url)
+                if key not in finding_browser_map:
+                    finding_browser_map[key] = {
+                        "finding": f,
+                        "browsers": set(),
+                        "urls": set(),
+                    }
+                finding_browser_map[key]["browsers"].add(b_name)
+                finding_browser_map[key]["urls"].add(f.url)
+
+        common_findings: list[dict[str, Any]] = []
+        browser_specific_findings: dict[str, list[dict[str, Any]]] = {
+            b: [] for b in self.browser_results
+        }
+
+        num_successful = len(successful_browsers)
+        for _key, data in finding_browser_map.items():
+            f = data["finding"]
+            f_dict = f.to_dict()
+            f_dict["affected_browsers"] = sorted(data["browsers"])
+            f_dict["affected_urls"] = sorted(data["urls"])
+
+            if num_successful > 1 and len(data["browsers"]) == num_successful:
+                common_findings.append(f_dict)
+            else:
+                for b in data["browsers"]:
+                    browser_specific_findings[b].append(f_dict)
+
+        return {
+            "tested_browsers": list(self.browser_results.keys()),
+            "successful_browsers": successful_browsers,
+            "total_common_findings": len(common_findings),
+            "common_findings": common_findings,
+            "browser_specific_findings": {
+                b: items for b, items in browser_specific_findings.items() if items
+            },
+            "browser_matrix": {
+                b: {
+                    "version": res.browser_version,
+                    "status": res.status,
+                    "duration_seconds": round(res.duration_seconds, 2),
+                    "pages_tested": len(res.pages_tested),
+                    "total_findings": res.total_findings,
+                    "error": res.error_message,
+                }
+                for b, res in self.browser_results.items()
+            },
+        }
+
     def to_dict(self) -> dict:
         """Convert session to dictionary."""
         return {
@@ -362,4 +474,11 @@ class TestSession:
             "status": self.status,
             "findings": [f.to_dict() for f in self.get_deduplicated_findings()],
             "summary": self.summary.to_dict() if self.summary else None,
+            "browser_results": {k: v.to_dict() for k, v in self.browser_results.items()},
+            "cross_browser_comparison": (
+                self.get_cross_browser_comparison() if len(self.browser_results) > 1 else None
+            ),
+            "nl_test_cases": self.nl_test_cases,
+            "nl_execution_results": self.nl_execution_results,
         }
+

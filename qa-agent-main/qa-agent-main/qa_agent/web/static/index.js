@@ -41,6 +41,12 @@ document.querySelectorAll('input[name="mode"]').forEach(radio => {
 // LLM provider → model options + env-var hint
 (function () {
   const MODELS = {
+    omnikey: [
+      { value: '', label: 'Auto (from OmniKey /models)' },
+      { value: 'gpt-4o', label: 'gpt-4o' },
+      { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
+      { value: 'claude-3-5-sonnet', label: 'claude-3-5-sonnet' },
+    ],
     anthropic: [
       { value: '',                          label: 'Default (claude-sonnet-4-6)' },
       { value: 'claude-sonnet-4-6',         label: 'claude-sonnet-4-6' },
@@ -57,9 +63,11 @@ document.querySelectorAll('input[name="mode"]').forEach(radio => {
     ],
   };
   const KEY_HINTS = {
+    omnikey:   'Requires <code>OMNIKEY_API_KEY</code> (in .env)',
     anthropic: 'Requires <code>ANTHROPIC_API_KEY</code>',
     openai:    'Requires <code>OPENAI_API_KEY</code>',
   };
+
 
   function updateLLMOptions() {
     const provider = document.getElementById('llm_provider').value;

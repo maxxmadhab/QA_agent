@@ -67,6 +67,8 @@ class TestConfig:
     viewport_width: int = 1280
     viewport_height: int = 720
     timeout: int = 30000  # ms
+    browsers: list[str] = field(default_factory=lambda: ["chromium"])
+    browser_type: str = "chromium"
 
     # Exploration settings
     max_depth: int = 3  # Max navigation depth in explore mode
@@ -154,6 +156,20 @@ class TestConfig:
             workers = 1
         self.workers = max(1, min(self.WORKERS_MAX, workers))
 
+        # Normalize and validate browser list
+        supported = ("chromium", "firefox", "webkit")
+        if not self.browsers:
+            self.browsers = ["chromium"]
+        else:
+            normalized = []
+            for b in self.browsers:
+                b_clean = str(b).strip().lower()
+                if b_clean in supported and b_clean not in normalized:
+                    normalized.append(b_clean)
+            self.browsers = normalized if normalized else ["chromium"]
+        if self.browser_type not in supported:
+            self.browser_type = self.browsers[0] if self.browsers else "chromium"
+
         # Clamp rate_limit to [0, RATE_LIMIT_MAX]. 0 (or negative) means
         # "unlimited" and is preserved as exactly 0.0 rather than floored up.
         try:
@@ -161,3 +177,11 @@ class TestConfig:
         except (TypeError, ValueError):
             rate_limit = 3.0
         self.rate_limit = 0.0 if rate_limit <= 0 else min(self.RATE_LIMIT_MAX, rate_limit)
+
+        # Normalize LLM provider
+        if isinstance(self.llm_provider, str):
+            try:
+                self.llm_provider = LLMProvider(self.llm_provider.lower().strip())
+            except ValueError:
+                self.llm_provider = LLMProvider.OMNIKEY if os.environ.get("OMNIKEY_API_KEY") else LLMProvider.ANTHROPIC
+

@@ -33,15 +33,16 @@ OUTPUT_DIR = Path.cwd() / "qa-agent-output"
 
 # ── Flask app ──────────────────────────────────────────────────────────────────
 app = Flask(__name__, template_folder=str(_HERE / "templates"))
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.jinja_env.auto_reload = True
 
 
 @app.after_request
 def add_security_headers(response: Response) -> Response:
     """Add Content-Security-Policy and other security headers to all responses."""
-    # Block inline scripts and external script sources as defense-in-depth against XSS
     response.headers["Content-Security-Policy"] = (
         "default-src 'self'; "
-        "script-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
         "frame-ancestors 'none'"
@@ -659,8 +660,8 @@ def _load_session(domain: str, session_id: str) -> dict | None:
             except ValueError:
                 pass  # already relative or outside OUTPUT_DIR — leave as-is
 
-    pages_tested = summary.get("pages_tested", 0)
-    total_findings = summary.get("total_findings", 0)
+    pages_tested = summary.get("pages_tested") or len(data.get("pages", []))
+    total_findings = summary.get("total_findings") if summary.get("total_findings") is not None else len(findings)
     stored_status = summary.get("status")
     if stored_status is None:
         if pages_tested == 0:
@@ -669,6 +670,13 @@ def _load_session(domain: str, session_id: str) -> dict | None:
             stored_status = "issues_found"
         else:
             stored_status = "passed"
+
+    ai_summary = data.get("ai_summary")
+    if not ai_summary and isinstance(summary, dict):
+        if "executive_summary" in summary:
+            ai_summary = summary
+        else:
+            ai_summary = summary.get("summary") or summary.get("ai_summary")
 
     return {
         "session_id": meta.get("session_id", session_id),
@@ -679,15 +687,65 @@ def _load_session(domain: str, session_id: str) -> dict | None:
         "config_summary": meta.get("config", {}),
         "pages_tested": pages_tested,
         "total_findings": total_findings,
-        "unique_findings": summary.get("unique_findings", 0),
+        "unique_findings": summary.get("unique_findings", len(findings)),
         "findings_by_severity": summary.get("findings_by_severity", {}),
         "findings_by_category": summary.get("findings_by_category", {}),
         "status": stored_status,
         "findings": findings,
         "reports": reports,
         "screenshots": screenshots,
-        "recording": recording,
+        "browser_results": summary.get("browser_results", {}),
+        "cross_browser_comparison": summary.get("cross_browser_comparison"),
+        "nl_execution_results": summary.get("nl_execution_results", []),
+        "nl_test_cases": summary.get("nl_test_cases", []),
+        "summary": ai_summary,
     }
+
+
+@app.route("/api/session/<domain>/<session_id>/analyze", methods=["POST"])
+def api_analyze_session(domain: str, session_id: str):
+    data = _load_session(domain, session_id)
+    if data is None:
+        return jsonify({"error": "Session not found"}), 404
+
+    from ..report_analyzer import ReportAnalyzer
+    body = request.get_json(force=True, silent=True) or {}
+    from ..llm_client import LLMProvider
+    provider_str = body.get("provider", "omnikey")
+    try:
+        provider = LLMProvider(provider_str.lower())
+    except ValueError:
+        provider = LLMProvider.OMNIKEY
+    model = body.get("model")
+
+    try:
+        analyzer = ReportAnalyzer(provider=provider, model=model)
+        analysis = analyzer.analyze(data)
+
+        # Update JSON and Markdown report files on disk
+        session_dir = OUTPUT_DIR / domain / session_id
+        reports_dir = session_dir / "qa_reports"
+        if reports_dir.exists():
+            for f in reports_dir.glob("qa_report_*.json"):
+                try:
+                    report_data = json.loads(f.read_text(encoding="utf-8"))
+                    report_data["ai_summary"] = analysis.to_dict()
+                    if isinstance(report_data.get("summary"), dict):
+                        report_data["summary"].update(analysis.to_dict())
+                    else:
+                        report_data["summary"] = analysis.to_dict()
+                    f.write_text(json.dumps(report_data, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
+
+            # Also save dedicated analysis artifact
+            analysis_file = reports_dir / f"qa_report_ai_analysis.json"
+            analysis_file.write_text(json.dumps(analysis.to_dict(), indent=2), encoding="utf-8")
+
+        return jsonify({"status": "ok", "summary": analysis.to_dict()})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
 
 
 # ── Config builder ─────────────────────────────────────────────────────────────
@@ -754,10 +812,18 @@ def _build_config(body: dict) -> TestConfig:
     ss_on_error = bool(ss_data.get("on_error", True)) and ss_enabled
     ss_on_interaction = bool(ss_data.get("on_interaction", False)) and ss_on_error
     ss_full_page = bool(ss_data.get("full_page", False)) and ss_enabled
+    raw_browsers = body.get("browsers", ["chromium"])
+    if isinstance(raw_browsers, str):
+        browsers = [b.strip() for b in raw_browsers.split(",") if b.strip()]
+    elif isinstance(raw_browsers, list):
+        browsers = [str(b).strip() for b in raw_browsers if str(b).strip()]
+    else:
+        browsers = ["chromium"]
 
     return TestConfig(
         urls=urls,
         mode=mode,
+        browsers=browsers,
         output_formats=output_formats,
         output_dir=str(body.get("output_dir") or OUTPUT_DIR),
         headless=bool(body.get("headless", True)),

@@ -80,6 +80,10 @@ class MarkdownReporter(BaseReporter):
                     lines.append(f"| {emoji} {cat_name} | {count} |")
             lines.append("")
 
+        # Cross-browser testing section
+        if getattr(session, "browser_results", None) and len(session.browser_results) > 1:
+            lines.extend(self._format_cross_browser(session))
+
         # AI summary section
         if session.summary:
             lines.extend(self._format_summary(session.summary))
@@ -117,7 +121,36 @@ class MarkdownReporter(BaseReporter):
                 lines.append("</details>")
         lines.append("")
 
+        # Natural Language Test Cases
+        if getattr(session, "nl_execution_results", None):
+            lines.append("## Natural Language Executable Test Cases")
+            lines.append("")
+            for tc in session.nl_execution_results:
+                status_emoji = "✅" if tc.get("status") == "passed" else ("⚠️" if tc.get("status") == "failed" else "❌")
+                lines.append(f"### {status_emoji} [{tc.get('id')}] {tc.get('title')}")
+                lines.append(f"- **Status:** `{tc.get('status', '').upper()}`")
+                lines.append(f"- **Total Duration:** {tc.get('total_duration_ms', 0):.1f}ms")
+                lines.append("")
+                if tc.get("step_results"):
+                    lines.append("#### Action Steps")
+                    lines.append("| # | Action | Target / Details | Status | Duration |")
+                    lines.append("| --- | --- | --- | --- | --- |")
+                    for s in tc.get("step_results", []):
+                        s_status = f"`{s.get('status', '').upper()}`"
+                        details = s.get("description") or f"{s.get('target', '')} {s.get('value', '')}".strip()
+                        lines.append(f"| {s.get('step_index')} | `{s.get('action')}` | {details} | {s_status} | {s.get('duration_ms', 0):.1f}ms |")
+                    lines.append("")
+                if tc.get("assertion_results"):
+                    lines.append("#### Assertions")
+                    lines.append("| # | Type | Target | Expected | Actual | Status |")
+                    lines.append("| --- | --- | --- | --- | --- | --- |")
+                    for a in tc.get("assertion_results", []):
+                        a_status = f"`{a.get('status', '').upper()}`"
+                        lines.append(f"| {a.get('assertion_index')} | `{a.get('type')}` | `{a.get('target', '-')}` | {a.get('expected_value', '-')} | {a.get('actual_value', '-')} | {a_status} |")
+                    lines.append("")
+
         # Detailed findings
+
         findings = session.get_deduplicated_findings()
         raw_count = session.total_findings
         dedup_count = len(findings)
@@ -329,5 +362,56 @@ class MarkdownReporter(BaseReporter):
         # between findings, so we avoid producing double blank lines.
         while lines and lines[-1] == "":
             lines.pop()
+
+        return lines
+
+    def _format_cross_browser(self, session: "TestSession") -> list[str]:
+        """Format cross-browser compatibility matrix and comparison breakdown."""
+        lines = [
+            "## 🌐 Cross-Browser Compatibility Matrix",
+            "",
+            "| Browser | Engine Version | Status | Duration | Findings | Launch / Error Details |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ]
+        comparison = session.get_cross_browser_comparison()
+        for b, info in comparison["browser_matrix"].items():
+            ver = info.get("version") or "N/A"
+            status = str(info.get("status", "unknown")).upper()
+            dur = f"{info.get('duration_seconds', 0.0):.1f}s"
+            findings_count = str(info.get("total_findings", 0))
+            err = info.get("error") or "-"
+            if err != "-":
+                err = f"`{err[:80]}...`" if len(err) > 80 else f"`{err}`"
+            lines.append(f"| {b.title()} | {ver} | {status} | {dur} | {findings_count} | {err} |")
+        lines.append("")
+
+        common = comparison["common_findings"]
+        lines.append(f"### Common Issues Across All Browsers ({len(common)})")
+        lines.append("")
+        if common:
+            lines.append("| Severity | Title | Affected URL |")
+            lines.append("| --- | --- | --- |")
+            for f in common:
+                sev = f.get("severity", "info").upper()
+                emoji = self._severity_emoji(f.get("severity", "info"))
+                lines.append(f"| {emoji} {sev} | {f.get('title', '')} | {f.get('url', '')} |")
+        else:
+            lines.append("No common issues observed across all browsers.")
+        lines.append("")
+
+        specific = comparison["browser_specific_findings"]
+        if specific:
+            lines.append("### Browser-Specific Issues")
+            lines.append("")
+            for b, items in specific.items():
+                lines.append(f"#### Issues Unique to {b.title()} ({len(items)})")
+                lines.append("")
+                lines.append("| Severity | Title | Affected URL |")
+                lines.append("| --- | --- | --- |")
+                for f in items:
+                    sev = f.get("severity", "info").upper()
+                    emoji = self._severity_emoji(f.get("severity", "info"))
+                    lines.append(f"| {emoji} {sev} | {f.get('title', '')} | {f.get('url', '')} |")
+                lines.append("")
 
         return lines

@@ -91,6 +91,15 @@
         </div>
       </div>
       <div class="field">
+        <label>Browser Engines (Cross-Browser Testing)</label>
+        <div class="checkbox-group" style="display:flex; gap:1.5rem; margin-top:0.35rem;">
+          <label class="check-label"><input type="checkbox" name="browser_chromium" value="chromium" checked> Chromium</label>
+          <label class="check-label"><input type="checkbox" name="browser_firefox" value="firefox"> Firefox</label>
+          <label class="check-label"><input type="checkbox" name="browser_webkit" value="webkit"> WebKit</label>
+        </div>
+        <span class="hint">Select multiple browsers to test across engines and compare compatibility results.</span>
+      </div>
+      <div class="field" style="margin-top:0.5rem;">
         <label class="check-label"><input type="checkbox" name="headless" checked> Headless mode</label>
       </div>
     </div>
@@ -209,10 +218,12 @@
         <div class="field">
           <label for="llm_provider">LLM Provider</label>
           <select id="llm_provider" name="llm_provider">
-            <option value="anthropic" selected>Anthropic (Claude)</option>
+            <option value="omnikey" selected>OmniKey AI (OpenAI-compatible)</option>
+            <option value="anthropic">Anthropic (Claude)</option>
             <option value="openai">OpenAI</option>
           </select>
-          <span class="hint" id="llm_key_hint">Requires <code>ANTHROPIC_API_KEY</code></span>
+          <span class="hint" id="llm_key_hint">Requires <code>OMNIKEY_API_KEY</code></span>
+
         </div>
         <div class="field">
           <label for="ai_model">Model</label>

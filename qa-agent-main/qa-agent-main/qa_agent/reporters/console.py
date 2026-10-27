@@ -41,9 +41,67 @@ class ConsoleReporter(BaseReporter):
         """Generate console output for the complete session."""
         self._print_header(session)
         self._print_summary(session)
+        self._print_cross_browser_summary(session)
+        self._print_nl_test_cases_summary(session)
         self._print_findings(session)
         self._print_footer(session)
         return "Console output complete"
+
+    def _print_nl_test_cases_summary(self, session: "TestSession"):
+        """Print natural language test cases and step execution outcomes."""
+        if not getattr(session, "nl_execution_results", None):
+            return
+        print(f"\n{self._color('🧪 NATURAL LANGUAGE EXECUTABLE TEST CASES', '1;95')}")
+        print("-" * 65)
+        for tc in session.nl_execution_results:
+            status_color = "92" if tc.get("status") == "passed" else ("93" if tc.get("status") == "failed" else "91")
+            status_badge = self._color(f"[{tc.get('status', 'UNKNOWN').upper()}]", status_color)
+            print(f"  {status_badge} [{tc.get('id')}] {tc.get('title')} ({tc.get('total_duration_ms', 0):.1f}ms)")
+            for s in tc.get("step_results", []):
+                s_icon = "✓" if s.get("status") == "passed" else "✗"
+                print(f"      {s_icon} Step {s.get('step_index')}: {s.get('action')} {s.get('description', '')} ({s.get('duration_ms', 0):.1f}ms)")
+            for a in tc.get("assertion_results", []):
+                a_icon = "✓" if a.get("status") == "passed" else "✗"
+                print(f"      {a_icon} Assert {a.get('assertion_index')}: {a.get('type')} expected={a.get('expected_value')} got={a.get('actual_value')} ({a.get('duration_ms', 0):.1f}ms)")
+
+
+    def _print_cross_browser_summary(self, session: "TestSession"):
+        """Print cross-browser comparison matrix if multiple browsers were tested."""
+        if not getattr(session, "browser_results", None) or len(session.browser_results) <= 1:
+            return
+
+        comparison = session.get_cross_browser_comparison()
+        print(f"\n{self._color('🌐 CROSS-BROWSER TESTING COMPARISON', '1;96')}")
+        print("-" * 65)
+
+        print(f"  {'Browser':<12} {'Version':<14} {'Status':<16} {'Duration':<10} {'Findings':<10}")
+        print(f"  {'-'*10:<12} {'-'*12:<14} {'-'*14:<16} {'-'*8:<10} {'-'*8:<10}")
+        for b, info in comparison["browser_matrix"].items():
+            version = info.get("version") or "N/A"
+            raw_status = str(info.get("status", "unknown")).upper()
+            status_color = "92" if raw_status == "PASSED" else ("93" if raw_status == "ISSUES_FOUND" else "91")
+            dur = f"{info.get('duration_seconds', 0.0):.1f}s"
+            findings_count = str(info.get("total_findings", 0))
+            status_str = f"{raw_status} (err)" if info.get("error") else raw_status
+            colored_status = self._color(status_str, status_color)
+            print(f"  {b.title():<12} {version:<14} {colored_status:<24} {dur:<10} {findings_count:<10}")
+
+        common_count = comparison["total_common_findings"]
+        print(f"\n  {self._color('Common Issues Across All Browsers:', '1')} {common_count}")
+        for f in comparison["common_findings"][:5]:
+            print(f"    • [{f['severity'].upper()}] {f['title']} ({f.get('url', '')})")
+        if common_count > 5:
+            print(f"    ... and {common_count - 5} more common issues")
+
+        specific = comparison["browser_specific_findings"]
+        if specific:
+            print(f"\n  {self._color('Browser-Specific Issues:', '1')}")
+            for b, items in specific.items():
+                print(f"    [{b.upper()}] ({len(items)} issues unique to this browser):")
+                for f in items[:3]:
+                    print(f"      - [{f['severity'].upper()}] {f['title']}")
+                if len(items) > 3:
+                    print(f"      ... and {len(items) - 3} more")
 
     def print_finding(self, finding: "Finding"):
         """Print a single finding in real-time."""

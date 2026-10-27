@@ -2,8 +2,13 @@
 
 import argparse
 import json
+import logging
+import os
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
 
 from . import __version__
 from .agent import QAAgent
@@ -17,6 +22,7 @@ from .config import (
 )
 from .llm_client import LLMProvider
 from .playwright_utils import ensure_chromium_installed
+from .report_analyzer import analyze_report_file
 
 
 def parse_auth_config(auth_str: str | None, auth_file: str | None) -> AuthConfig | None:
@@ -200,6 +206,14 @@ Examples:
         default=30000,
         help="Timeout in milliseconds (default: 30000)",
     )
+    parser.add_argument(
+        "-b", "--browsers",
+        nargs="+",
+        default=["chromium"],
+        choices=["chromium", "firefox", "webkit"],
+        help="Browser engines to test: chromium, firefox, webkit (default: chromium). "
+             "Pass multiple engines to enable cross-browser testing comparison.",
+    )
 
     # Test categories
     parser.add_argument(
@@ -291,19 +305,21 @@ Examples:
     )
     parser.add_argument(
         "--llm",
-        choices=["anthropic", "openai"],
+        choices=["anthropic", "openai", "omnikey"],
         default="anthropic",
         dest="llm_provider",
-        help="LLM provider to use for AI instructions (default: anthropic)",
+        help="LLM provider to use for AI instructions: anthropic, openai, omnikey (default: anthropic)",
     )
+
     parser.add_argument(
         "--ai-model",
         default=None,
         help=(
             "Model to use for the selected LLM provider. "
-            "Defaults: anthropic=claude-sonnet-4-6, openai=gpt-4o"
+            "Defaults: anthropic=claude-sonnet-4-6, openai=gpt-4o, omnikey=auto"
         ),
     )
+
     parser.add_argument(
         "--no-cache",
         action="store_true",
@@ -318,6 +334,12 @@ Examples:
             "and likely false positives. Appended to Markdown and JSON reports."
         ),
     )
+    parser.add_argument(
+        "--analyze-report",
+        metavar="PATH",
+        help="Analyze an existing QA report (JSON or Markdown) with OmniKey AI and generate an executive narrative report.",
+    )
+
 
     # Part 1 DevOps & API Testing Options
     parser.add_argument(
@@ -395,6 +417,37 @@ Examples:
 
     args = parser.parse_args()
 
+    # Standalone report analysis mode
+    if getattr(args, "analyze_report", None):
+        provider = LLMProvider(args.llm_provider) if isinstance(args.llm_provider, str) else args.llm_provider
+        try:
+            result, out_path = analyze_report_file(
+                args.analyze_report,
+                provider=provider,
+                model=args.ai_model,
+            )
+            print("\n=======================================================")
+            print("[*] AI-POWERED QA REPORT ANALYSIS")
+            print("=======================================================")
+            print(f"\nExecutive Summary:\n{result.executive_summary}\n")
+            if result.cross_browser_analysis:
+                print(f"Cross-Browser Comparison:\n{result.cross_browser_analysis}\n")
+            if result.root_cause_clusters:
+                print("Root-Cause Clusters:")
+                for c in result.root_cause_clusters:
+                    print(f"  - {c.label}: {c.root_cause} (Fix: {c.suggested_fix})")
+            if result.priority_recommendations:
+                print("\nPrioritized Remediation Plan:")
+                for idx, r in enumerate(result.priority_recommendations, start=1):
+                    print(f"  {idx}. {r}")
+            print(f"\nSaved narrative analysis to: {out_path}\n")
+            sys.exit(0)
+        except Exception as exc:
+            import traceback
+            logger.error("Report analysis failed: %s", exc, exc_info=True)
+            print(f"Report analysis failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+
     # Validate: --no-cache requires instructions
     if args.no_cache and not (args.instructions or args.instructions_file):
         parser.error("--no-cache can only be used with --instructions or --instructions-file")
@@ -402,6 +455,7 @@ Examples:
     # Validate: need URLs unless running a batch file
     if not args.urls and not args.batch_file:
         parser.error("at least one URL is required (or use --batch-file)")
+
 
     # Parse output formats
     output_formats = []
@@ -480,6 +534,7 @@ Examples:
         viewport_width=width,
         viewport_height=height,
         timeout=args.timeout,
+        browsers=args.browsers,
         max_depth=args.max_depth,
         max_pages=args.max_pages,
         max_interactions_per_page=args.max_interactions_per_page,

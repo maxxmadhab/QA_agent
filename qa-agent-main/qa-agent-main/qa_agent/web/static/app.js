@@ -108,9 +108,15 @@ function collectFormData(form) {
 
   const outputFormats = fd.getAll('output_formats');
 
+  const browsers = [];
+  if (fd.get('browser_chromium')) browsers.push('chromium');
+  if (fd.get('browser_firefox')) browsers.push('firefox');
+  if (fd.get('browser_webkit')) browsers.push('webkit');
+
   return {
     urls: urlsRaw,
     mode,
+    browsers: browsers.length ? browsers : ['chromium'],
     output_formats: outputFormats.length ? outputFormats : ['console', 'markdown', 'json'],
     output_dir: fd.get('output_dir') || null,
     headless: !!fd.get('headless'),
@@ -171,6 +177,11 @@ function applyConfig(cfg) {
     }
   }
   setCheck(form, 'headless', cfg.headless !== false);
+  if (cfg.browsers && Array.isArray(cfg.browsers)) {
+    setCheck(form, 'browser_chromium', cfg.browsers.includes('chromium'));
+    setCheck(form, 'browser_firefox', cfg.browsers.includes('firefox'));
+    setCheck(form, 'browser_webkit', cfg.browsers.includes('webkit'));
+  }
   setNum(form, 'workers', cfg.workers);
   setNum(form, 'viewport_width', cfg.viewport_width);
   setNum(form, 'viewport_height', cfg.viewport_height);

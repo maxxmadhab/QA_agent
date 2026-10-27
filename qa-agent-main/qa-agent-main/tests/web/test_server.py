@@ -650,3 +650,39 @@ class TestApiServerConfig:
     def test_build_config_workers_defaults_to_1(self):
         config = _build_config({"urls": ["https://example.com"]})
         assert config.workers == 1
+
+
+class TestApiAnalyzeSession:
+    def test_analyze_session_not_found_returns_404(self, client):
+        resp = client.post("/api/session/nonexistent.com/no-session-id/analyze", json={})
+        assert resp.status_code == 404
+        assert "not found" in resp.get_json()["error"].lower()
+
+    def test_analyze_session_success(self, client, tmp_output):
+        from qa_agent.models import SummaryResult
+        # Set up a session folder with a qa_reports JSON file
+        sess_dir = tmp_output / "example.com" / "sess-1"
+        reports_dir = sess_dir / "qa_reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        report_file = reports_dir / "qa_report_20261027_000000.json"
+        report_file.write_text(json.dumps({
+            "meta": {"session_id": "sess-1"},
+            "summary": {"pages_tested": 1, "total_findings": 0},
+            "findings": []
+        }))
+
+        mock_summary = SummaryResult(
+            executive_summary="All pages passed.",
+            priority_recommendations=["Deploy with confidence."],
+        )
+
+        with patch("qa_agent.report_analyzer.ReportAnalyzer.analyze", return_value=mock_summary):
+            resp = client.post("/api/session/example.com/sess-1/analyze", json={"provider": "omnikey"})
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["status"] == "ok"
+            assert data["summary"]["executive_summary"] == "All pages passed."
+            # Verify file on disk was updated
+            updated_data = json.loads(report_file.read_text(encoding="utf-8"))
+            assert updated_data["summary"]["executive_summary"] == "All pages passed."
+
