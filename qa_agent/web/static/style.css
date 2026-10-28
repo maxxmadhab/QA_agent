@@ -1922,6 +1922,31 @@ textarea:focus {
   .report-hero { flex-direction: column; align-items: flex-start; gap: 1rem; }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+  display: inline-block;
+}
+
+@media print {
+  /* Hide navigation, action buttons, filter bars, and interactive chrome when printing session details */
+  .nav,
+  .action-bar,
+  #download-ai-pdf-btn,
+  #view-details-btn,
+  #run-analysis-btn,
+  .report-tab-nav,
+  .issue-filter-btn,
+  .gallery-grid,
+  .log-console-container {
+    display: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

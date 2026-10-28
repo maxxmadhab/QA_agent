@@ -31,9 +31,11 @@
   </div>
 
   <div class="flex items-center gap-3">
-    {% if session.reports and session.reports.pdf %}
-    <a href="{{ session.reports.pdf }}" download class="btn btn-primary btn-lg"
-      style="border-radius: var(--radius-pill); padding: 0.75rem 1.75rem; display: inline-flex; align-items: center; gap: 0.5rem;">
+    <a href="/session/{{ domain }}/{{ session.session_id }}/ai-report?print=1" target="_blank" id="download-ai-pdf-btn" class="btn btn-primary btn-lg"
+      data-has-summary="{{ 'true' if session.summary and session.summary.executive_summary else 'false' }}"
+      data-domain="{{ domain }}"
+      data-session-id="{{ session.session_id }}"
+      style="border-radius: var(--radius-pill); padding: 0.75rem 1.75rem; display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none;">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
         <polyline points="7 10 12 15 17 10"></polyline>
@@ -41,17 +43,6 @@
       </svg>
       Download PDF
     </a>
-    {% else %}
-    <button type="button" id="export-pdf-btn" class="btn btn-primary btn-lg"
-      style="border-radius: var(--radius-pill); padding: 0.75rem 1.75rem; display: inline-flex; align-items: center; gap: 0.5rem;">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-        <polyline points="7 10 12 15 17 10"></polyline>
-        <line x1="12" y1="15" x2="12" y2="3"></line>
-      </svg>
-      Download PDF
-    </button>
-    {% endif %}
 
     <a href="#report-details" id="view-details-btn" class="btn btn-ghost" style="font-weight: 600;">
       View Details &rarr;

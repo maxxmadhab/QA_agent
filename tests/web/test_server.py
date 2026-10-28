@@ -364,6 +364,32 @@ class TestSessionView:
         resp = client.get("/session/example.com/unknownsession")
         assert resp.status_code == 404
 
+    def test_ai_report_unknown_session_returns_404(self, client, tmp_output):
+        resp = client.get("/session/example.com/unknownsession/ai-report")
+        assert resp.status_code == 404
+
+    def test_ai_report_known_session_renders(self, client, tmp_output):
+        sess_dir = tmp_output / "example.com" / "sess-ai-pdf"
+        reports_dir = sess_dir / "qa_reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        report_file = reports_dir / "qa_report_20261027_000000.json"
+        report_file.write_text(json.dumps({
+            "meta": {"session_id": "sess-ai-pdf"},
+            "summary": {
+                "pages_tested": 1,
+                "total_findings": 0,
+                "executive_summary": "System passed QA audit.",
+                "priority_recommendations": ["P0: Verify SSL certs"]
+            },
+            "findings": []
+        }))
+        resp = client.get("/session/example.com/sess-ai-pdf/ai-report?print=1")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "AI Executive Analysis &amp; Prioritized Remediation Plan" in html or "AI Executive Analysis & Prioritized Remediation Plan" in html
+        assert "System passed QA audit." in html
+        assert "P0: Verify SSL certs" in html
+
 
 # ---------------------------------------------------------------------------
 # _QueueWriter

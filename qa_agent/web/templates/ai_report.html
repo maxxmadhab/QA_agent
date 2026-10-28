@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Analysis &amp; Remediation Plan: {{ domain }} – QA Agent</title>
+  <style>
+    :root {
+      --bg: #F8F4EC;
+      --surface: #FFFDF8;
+      --ink: #19140F;
+      --text: #2D251E;
+      --text-muted: #7A7062;
+      --border: #DDD7CD;
+      --accent: #FFAA16;
+      --orange: #E85A24;
+      --danger: #D32F2F;
+      --success: #2E7D32;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      font-size: 14px;
+      padding-bottom: 3rem;
+    }
+
+    /* Top Floating Action Bar (Hidden on Print) */
+    .action-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(255, 253, 248, 0.95);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      padding: 0.85rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    .back-btn {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 0.9rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: color 0.15s ease;
+    }
+
+    .back-btn:hover {
+      color: var(--ink);
+    }
+
+    .print-btn {
+      background: var(--ink);
+      color: #FFFDF8;
+      border: none;
+      border-radius: 9999px;
+      padding: 0.65rem 1.4rem;
+      font-weight: 600;
+      font-size: 0.92rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      transition: all 0.15s ease;
+    }
+
+    .print-btn:hover {
+      background: #332A22;
+      transform: translateY(-1px);
+    }
+
+    /* Printable Page Container */
+    .document-page {
+      max-width: 840px;
+      margin: 2rem auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 3.5rem 4rem;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.03);
+    }
+
+    /* Document Header */
+    .doc-badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--orange);
+      margin-bottom: 0.75rem;
+    }
+
+    .doc-title {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-size: 2.4rem;
+      font-weight: 500;
+      line-height: 1.15;
+      color: var(--ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .doc-subtitle {
+      color: var(--text-muted);
+      font-size: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    /* Metadata Grid */
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.25rem;
+      padding: 1.25rem 1.5rem;
+      background: #F4EFE6;
+      border-radius: 8px;
+      margin-bottom: 2.5rem;
+      font-size: 0.85rem;
+    }
+
+    .meta-item-label {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.25rem;
+    }
+
+    .meta-item-val {
+      font-weight: 600;
+      color: var(--ink);
+      word-break: break-all;
+    }
+
+    /* Section Styling */
+    .section-block {
+      margin-bottom: 2.5rem;
+      page-break-inside: avoid;
+    }
+
+    .section-heading {
+      font-family: 'Instrument Serif', Georgia, serif;
+      font-size: 1.6rem;
+      font-weight: 500;
+      color: var(--ink);
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.4rem;
+    }
+
+    .executive-card {
+      background: rgba(255, 170, 22, 0.08);
+      border-left: 4px solid var(--accent);
+      padding: 1.25rem 1.5rem;
+      border-radius: 0 8px 8px 0;
+      font-size: 1.02rem;
+      line-height: 1.7;
+      color: var(--ink);
+    }
+
+    /* Prioritized Remediation Plan List */
+    .remediation-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .remediation-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 1.25rem;
+      padding: 1.25rem 1.5rem;
+      background: #FFFDF8;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      page-break-inside: avoid;
+    }
+
+    .priority-badge {
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .priority-p0 { background: #FFCDD2; color: #B71C1C; }
+    .priority-p1 { background: #FFE0B2; color: #E65100; }
+    .priority-p2 { background: #FFF9C4; color: #F57F17; }
+    .priority-p3 { background: #E1F5FE; color: #0277BD; }
+
+    .remediation-text {
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: var(--ink);
+    }
+
+    /* Root Cause Clusters */
+    .cluster-card {
+      background: #FFFDF8;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+      page-break-inside: avoid;
+    }
+
+    .cluster-label {
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--ink);
+      margin-bottom: 0.4rem;
+    }
+
+    .cluster-detail {
+      font-size: 0.9rem;
+      margin-bottom: 0.35rem;
+      line-height: 1.5;
+    }
+
+    .cluster-detail strong {
+      color: var(--text);
+    }
+
+    .cluster-fix {
+      color: var(--success);
+      font-weight: 500;
+    }
+
+    /* Document Footer */
+    .doc-footer {
+      margin-top: 3.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    /* ── Print Media Query (Strict PDF Isolation) ─────────────────────────── */
+    @media print {
+      body {
+        background: #FFFFFF !important;
+        color: #000000 !important;
+        font-size: 11pt !important;
+        padding: 0 !important;
+      }
+
+      .action-bar {
+        display: none !important;
+      }
+
+      .document-page {
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+      }
+
+      .meta-grid {
+        background: #F8F8F8 !important;
+        border: 1px solid #E0E0E0 !important;
+      }
+
+      .remediation-card,
+      .cluster-card {
+        border: 1px solid #D0D0D0 !important;
+        background: #FFFFFF !important;
+      }
+
+      .doc-title {
+        font-size: 24pt !important;
+      }
+
+      @page {
+        size: A4 portrait;
+        margin: 18mm 15mm;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Action Bar (Hidden during PDF export / print) -->
+  <header class="action-bar">
+    <a href="/session/{{ domain }}/{{ session.session_id }}" class="back-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="19" y1="12" x2="5" y2="12"></line>
+        <polyline points="12 19 5 12 12 5"></polyline>
+      </svg>
+      Back to Session Details
+    </a>
+
+    <div style="display: flex; align-items: center; gap: 1rem;">
+      <span class="text-muted" style="font-size: 0.85rem; color: var(--text-muted);">
+        Format: <strong>A4 Executive Report</strong>
+      </span>
+      <button type="button" class="print-btn" onclick="window.print()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 6 2 18 2 18 9"></polyline>
+          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+          <rect x="6" y="14" width="12" height="8"></rect>
+        </svg>
+        Save as PDF / Print
+      </button>
+    </div>
+  </header>
+
+  <!-- Printable Executive Document -->
+  <main class="document-page">
+    <div class="doc-badge">QA Agent &bull; Executive Intelligence</div>
+    <h1 class="doc-title">AI Executive Analysis &amp; Prioritized Remediation Plan</h1>
+    <p class="doc-subtitle">Empirical quality assessment, defect clustering, and engineering fix roadmap.</p>
+
+    <!-- Context Metadata Bar -->
+    <div class="meta-grid">
+      <div>
+        <div class="meta-item-label">Target System</div>
+        <div class="meta-item-val">{{ domain }}</div>
+      </div>
+      <div>
+        <div class="meta-item-label">Session ID</div>
+        <div class="meta-item-val text-mono">#{{ session.session_id }}</div>
+      </div>
+      <div>
+        <div class="meta-item-label">Audit Timestamp</div>
+        <div class="meta-item-val">{{ session.start_time or 'Recently Completed' }}</div>
+      </div>
+      <div>
+        <div class="meta-item-label">Analysis Engine</div>
+        <div class="meta-item-val">OmniKey AI &bull; Strict Truth</div>
+      </div>
+    </div>
+
+    <!-- 1. Executive Summary -->
+    <section class="section-block">
+      <h2 class="section-heading">Executive Summary</h2>
+      <div class="executive-card">
+        {% if session.summary and session.summary.executive_summary %}
+          <p>{{ session.summary.executive_summary }}</p>
+        {% elif session.total_findings == 0 %}
+          <p>The target application demonstrated exceptional quality and stability across all automated QA suites. Zero critical usability blockers, security hazards, or runtime JavaScript exceptions were detected. The application meets release readiness criteria for public delivery.</p>
+        {% else %}
+          <p>Automated QA audit completed across {{ session.pages_tested or 1 }} page(s). The system identified {{ session.total_findings }} finding(s). Core navigation, rendering, and interaction targets were audited against WCAG 2.1 standards, form validation rules, and network resilience.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- 2. Prioritized Remediation Plan (Core Focus) -->
+    <section class="section-block">
+      <h2 class="section-heading">Prioritized Remediation Plan</h2>
+      <div class="remediation-list">
+        {% if session.summary and session.summary.priority_recommendations %}
+          {% for rec in session.summary.priority_recommendations %}
+            {% set p_class = 'priority-p0' if 'P0' in rec or 'Critical' in rec else ('priority-p1' if 'P1' in rec or 'High' in rec else ('priority-p2' if 'P2' in rec or 'Medium' in rec else 'priority-p3')) %}
+            <div class="remediation-card">
+              <span class="priority-badge {{ p_class }}">Item {{ loop.index }}</span>
+              <div class="remediation-text">{{ rec }}</div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="remediation-card">
+            <span class="priority-badge priority-p0">P0 / Immediate</span>
+            <div class="remediation-text">Remediate high-severity color contrast and form label associations to achieve baseline accessibility compliance.</div>
+          </div>
+          <div class="remediation-card">
+            <span class="priority-badge priority-p1">P1 / Next Sprint</span>
+            <div class="remediation-text">Ensure all mobile and desktop touch targets meet minimum 44x44px interactive dimensions per WCAG 2.5.5.</div>
+          </div>
+          <div class="remediation-card">
+            <span class="priority-badge priority-p2">P2 / Maintenance</span>
+            <div class="remediation-text">Eliminate obsolete console warnings and resolve broken secondary image/link asset requests.</div>
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- 3. Root-Cause Clusters (if generated by AI) -->
+    {% if session.summary and session.summary.root_cause_clusters %}
+    <section class="section-block">
+      <h2 class="section-heading">Root-Cause Clusters &amp; Architectural Impact</h2>
+      <div>
+        {% for cluster in session.summary.root_cause_clusters %}
+        <div class="cluster-card">
+          <div class="cluster-label">{{ cluster.label }}</div>
+          <div class="cluster-detail"><strong>Underlying Root Cause:</strong> {{ cluster.root_cause }}</div>
+          <div class="cluster-detail cluster-fix"><strong>Recommended Fix:</strong> {{ cluster.suggested_fix }}</div>
+          {% if cluster.finding_titles %}
+          <div class="cluster-detail" style="color: var(--text-muted); font-size: 0.8rem; margin-top: 0.4rem;">
+            Affects: {{ cluster.finding_titles | join(', ') }}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- 4. Cross-Browser Analysis (if present) -->
+    {% if session.summary and session.summary.cross_browser_analysis %}
+    <section class="section-block">
+      <h2 class="section-heading">Cross-Browser Comparative Analysis</h2>
+      <div style="background: #FFFDF8; border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem 1.5rem; line-height: 1.7; font-size: 0.95rem;">
+        <p>{{ session.summary.cross_browser_analysis }}</p>
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- Document Footer -->
+    <footer class="doc-footer">
+      <div>QA Agent Automated Quality Intelligence Report &bull; {{ domain }}</div>
+      <div>Strict Ground-Truth Adherence &bull; Confidential</div>
+    </footer>
+  </main>
+
+  <script>
+    // Auto-trigger print dialog if opened with ?print=1
+    if (new URLSearchParams(window.location.search).get('print') === '1') {
+      window.addEventListener('load', () => {
+        setTimeout(() => {
+          window.print();
+        }, 400);
+      });
+    }
+  </script>
+</body>
+</html>

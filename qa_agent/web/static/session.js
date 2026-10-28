@@ -109,10 +109,45 @@
     }
   });
 
-  // ── PDF Export Button ─────────────────────────────────────────────────────────
-  document.getElementById('export-pdf-btn')?.addEventListener('click', () => {
-    window.print();
-  });
+  // ── PDF Export Button (Dedicated AI Analysis & Remediation Plan) ─────────
+  const downloadPdfBtn = document.getElementById('download-ai-pdf-btn');
+  if (downloadPdfBtn) {
+    downloadPdfBtn.addEventListener('click', async (e) => {
+      const hasSummary = downloadPdfBtn.dataset.hasSummary === 'true';
+      const domain = downloadPdfBtn.dataset.domain;
+      const sessionId = downloadPdfBtn.dataset.sessionId;
+
+      if (!hasSummary && domain && sessionId) {
+        e.preventDefault();
+        const origHtml = downloadPdfBtn.innerHTML;
+        downloadPdfBtn.innerHTML = `
+          <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+          </svg>
+          Generating AI Report...
+        `;
+        downloadPdfBtn.style.pointerEvents = 'none';
+
+        try {
+          const res = await fetch(`/api/session/${encodeURIComponent(domain)}/${encodeURIComponent(sessionId)}/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider: 'omnikey' }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'AI analysis generation failed');
+
+          downloadPdfBtn.dataset.hasSummary = 'true';
+          // Navigate to the AI report view with print trigger enabled
+          window.location.href = `/session/${encodeURIComponent(domain)}/${encodeURIComponent(sessionId)}/ai-report?print=1`;
+        } catch (err) {
+          alert(`Could not generate AI analysis for PDF: ${err.message}`);
+          downloadPdfBtn.innerHTML = origHtml;
+          downloadPdfBtn.style.pointerEvents = '';
+        }
+      }
+    });
+  }
 
   // ── AI Analysis Trigger ───────────────────────────────────────────────────────
   const aiBtn = document.getElementById('run-analysis-btn');

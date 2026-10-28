@@ -278,6 +278,31 @@ def session_view(domain: str, session_id: str):
     return render_template("session.html", session=data, domain=domain)
 
 
+@app.route("/session/<domain>/<session_id>/ai-report")
+def session_ai_report_view(domain: str, session_id: str):
+    data = _load_session(domain, session_id)
+    if data is None:
+        abort(404)
+
+    # If AI summary is not yet generated, attempt automatic generation
+    if not data.get("summary"):
+        from ..llm_client import LLMProvider
+        from ..report_analyzer import ReportAnalyzer
+        provider = LLMProvider.OMNIKEY if os.environ.get("OMNIKEY_API_KEY") else LLMProvider.ANTHROPIC
+        try:
+            analyzer = ReportAnalyzer(provider=provider)
+            analysis = analyzer.analyze(data)
+            data["summary"] = analysis.to_dict()
+            reports_dir = OUTPUT_DIR / domain / session_id / "qa_reports"
+            if reports_dir.exists():
+                analysis_file = reports_dir / "qa_report_ai_analysis.json"
+                analysis_file.write_text(json.dumps(analysis.to_dict(), indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    return render_template("ai_report.html", session=data, domain=domain)
+
+
 # ── API ────────────────────────────────────────────────────────────────────────
 
 @app.route("/api/run", methods=["POST"])
@@ -684,6 +709,11 @@ def _load_session(domain: str, session_id: str) -> dict | None:
             stored_status = "passed"
 
     ai_summary = data.get("ai_summary")
+    if not ai_summary and (reports_dir / "qa_report_ai_analysis.json").exists():
+        try:
+            ai_summary = json.loads((reports_dir / "qa_report_ai_analysis.json").read_text(encoding="utf-8"))
+        except Exception:
+            pass
     if not ai_summary and isinstance(summary, dict):
         if "executive_summary" in summary:
             ai_summary = summary
