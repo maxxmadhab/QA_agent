@@ -246,6 +246,17 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/quick-test")
+def quick_test_view():
+    return render_template("quick_test.html")
+
+
+@app.route("/studio")
+@app.route("/run")
+def studio_view():
+    return render_template("studio.html")
+
+
 @app.route("/run/<job_id>")
 def run_view(job_id: str):
     job = _jobs.get(job_id)
@@ -641,6 +652,7 @@ def _load_session(domain: str, session_id: str) -> dict | None:
             if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
                 screenshots.append(f"/files/{f.relative_to(OUTPUT_DIR)}")
 
+    recording = None
     recordings_dir = session_dir / "recordings"
     if recordings_dir.exists():
         for f in recordings_dir.iterdir():
@@ -699,6 +711,7 @@ def _load_session(domain: str, session_id: str) -> dict | None:
         "nl_execution_results": summary.get("nl_execution_results", []),
         "nl_test_cases": summary.get("nl_test_cases", []),
         "summary": ai_summary,
+        "recording": recording,
     }
 
 
@@ -739,7 +752,7 @@ def api_analyze_session(domain: str, session_id: str):
                     pass
 
             # Also save dedicated analysis artifact
-            analysis_file = reports_dir / f"qa_report_ai_analysis.json"
+            analysis_file = reports_dir / "qa_report_ai_analysis.json"
             analysis_file.write_text(json.dumps(analysis.to_dict(), indent=2), encoding="utf-8")
 
         return jsonify({"status": "ok", "summary": analysis.to_dict()})

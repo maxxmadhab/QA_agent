@@ -18,7 +18,12 @@ Scenarios and expected exit codes:
 """
 
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+_ROOT = str(Path(__file__).resolve().parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 if len(sys.argv) < 2:
     print(f"Usage: {__file__} <scenario>", file=sys.stderr)

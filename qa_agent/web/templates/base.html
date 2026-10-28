@@ -8,10 +8,17 @@
 </head>
 <body>
   <nav class="nav">
-    <a class="nav-brand" href="/">QA Agent</a>
+    <a class="nav-brand" href="/" title="QA Agent Home">
+      <span class="nav-logo-badge"><span class="nav-logo-dot"></span></span>
+      <span>QA Agent</span>
+    </a>
     <div class="nav-links">
-      <a href="/" class="nav-link {% if request.path == '/' %}active{% endif %}">Run Test</a>
+      <a href="/quick-test" class="nav-link {% if request.path == '/quick-test' %}active{% endif %}">Quick test</a>
+      <a href="/studio" class="nav-link {% if request.path == '/studio' %}active{% endif %}">Studio</a>
       <a href="/sessions" class="nav-link {% if request.path.startswith('/session') %}active{% endif %}">Sessions</a>
+    </div>
+    <div class="nav-user">
+      <span class="user-avatar" title="QA Lead">M</span>
     </div>
   </nav>
 

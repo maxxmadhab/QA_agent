@@ -1,0 +1,549 @@
+{% extends "base.html" %}
+
+{% block title %}Developer Studio – QA Agent{% endblock %}
+
+{% block content %}
+<div class="studio-layout">
+  <!-- Left Vertical Stepper Navigation -->
+  <aside class="vertical-stepper" id="studio-stepper" aria-label="Configuration steps">
+    <button type="button" class="vert-step-item active" data-step="basic">
+      <span class="vert-step-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </span>
+      <span>Basic Config</span>
+    </button>
+    <button type="button" class="vert-step-item" data-step="categories">
+      <span class="vert-step-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </span>
+      <span>Test Categories</span>
+    </button>
+    <button type="button" class="vert-step-item" data-step="browser">
+      <span class="vert-step-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </span>
+      <span>Browser Settings</span>
+    </button>
+    <button type="button" class="vert-step-item" data-step="auth">
+      <span class="vert-step-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </span>
+      <span>Authentication</span>
+    </button>
+    <button type="button" class="vert-step-item" data-step="advanced">
+      <span class="vert-step-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </span>
+      <span>Advanced Settings</span>
+    </button>
+    <button type="button" class="vert-step-item" data-step="review">
+      <span class="vert-step-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </span>
+      <span>Review &amp; Run</span>
+    </button>
+  </aside>
+
+  <!-- Center Config Form -->
+  <main class="studio-main-card">
+    <form id="studio-form" autocomplete="off">
+      <div id="form-error" class="alert-box alert-error" style="display: none; margin-bottom: 1.5rem;"></div>
+
+      <!-- Step 1: Basic Config -->
+      <section class="step-panel active" id="panel-basic">
+        <div class="mb-4">
+          <h2 style="font-family: var(--font-serif); font-size: 1.85rem; font-weight: 500; margin-bottom: 0.25rem;">Basic Configuration</h2>
+          <p class="text-muted" style="font-size: 0.95rem;">Set up your test with the essential details.</p>
+        </div>
+
+        <div class="form-group mb-4">
+          <div class="flex items-center justify-between mb-2">
+            <label class="form-label" for="studio-urls" style="margin-bottom: 0;">URLs to Test <span class="text-orange">*</span></label>
+            <span id="url-counter" class="text-muted text-mono" style="font-size: 0.8rem;">1 URL</span>
+          </div>
+          <textarea id="studio-urls" name="urls" class="form-textarea text-mono" rows="4" placeholder="https://example.com&#10;https://example.com/login" required style="font-size: 0.88rem;">https://example.com</textarea>
+        </div>
+
+        <div class="form-group mb-4">
+          <label class="form-label mb-2">Test Mode</label>
+          <div class="radio-card-grid">
+            <label class="radio-card active" id="mode-card-focused">
+              <input type="radio" name="mode" value="focused" checked style="display:none;">
+              <div class="radio-indicator"></div>
+              <div>
+                <div style="font-weight: 600; font-size: 0.95rem;">Focused</div>
+                <div class="text-muted" style="font-size: 0.82rem;">Test only the given URLs</div>
+              </div>
+            </label>
+            <label class="radio-card" id="mode-card-explore">
+              <input type="radio" name="mode" value="explore" style="display:none;">
+              <div class="radio-indicator"></div>
+              <div>
+                <div style="font-weight: 600; font-size: 0.95rem;">Explore</div>
+                <div class="text-muted" style="font-size: 0.82rem;">Crawl and discover pages</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Explore parameters (shown only when explore is chosen) -->
+        <div id="explore-options" class="card p-3 mb-4" style="display: none; background: var(--surface-secondary);">
+          <div class="grid" style="grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="max_depth">Max Crawl Depth</label>
+              <input type="number" id="max_depth" name="max_depth" class="form-input" value="3" min="1" max="10">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="max_pages">Max Pages to Test</label>
+              <input type="number" id="max_pages" name="max_pages" class="form-input" value="50" min="1" max="500">
+            </div>
+          </div>
+          <div class="checkbox-label mt-2">
+            <input type="checkbox" id="same_domain_only" name="same_domain_only" class="form-checkbox" checked>
+            <span>Restrict to same domain only</span>
+          </div>
+        </div>
+
+        <div class="form-group mb-4">
+          <label class="form-label mb-2">Output Formats</label>
+          <div class="checkbox-group" style="gap: 1.5rem;">
+            <label class="checkbox-label">
+              <input type="checkbox" name="output_formats" value="console" class="form-checkbox" checked>
+              <span>Console</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="output_formats" value="markdown" class="form-checkbox" checked>
+              <span>Markdown</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="output_formats" value="json" class="form-checkbox" checked>
+              <span>JSON</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="output_formats" value="pdf" class="form-checkbox">
+              <span>PDF</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group mb-4">
+          <label class="form-label" for="output_dir">Output Directory</label>
+          <div style="position: relative;">
+            <input type="text" id="output_dir" name="output_dir" class="form-input text-mono" value="./qa-agent-output" style="padding-right: 2.5rem; font-size: 0.88rem;">
+            <svg style="position: absolute; right: 0.85rem; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted); pointer-events: none;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+        </div>
+
+        <div class="flex justify-end pt-3">
+          <button type="button" class="btn btn-primary next-step-btn" data-target="categories">Next: Test Categories &rarr;</button>
+        </div>
+      </section>
+
+      <!-- Step 2: Test Categories -->
+      <section class="step-panel" id="panel-categories" style="display: none;">
+        <div class="mb-4">
+          <h2 style="font-family: var(--font-serif); font-size: 1.85rem; font-weight: 500; margin-bottom: 0.25rem;">Test Categories</h2>
+          <p class="text-muted" style="font-size: 0.95rem;">Select which automated checks QA Agent should execute.</p>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.85rem;" class="mb-4">
+          <label class="checkbox-label p-3 card" style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+            <input type="checkbox" name="test_keyboard" class="form-checkbox" checked style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; font-size: 0.95rem;">Keyboard Navigation</div>
+              <div class="text-muted" style="font-size: 0.82rem;">Focus visibility, TAB order, keyboard traps, and Enter/Esc interactions.</div>
+            </div>
+          </label>
+
+          <label class="checkbox-label p-3 card" style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+            <input type="checkbox" name="test_mouse" class="form-checkbox" checked style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; font-size: 0.95rem;">Mouse &amp; Pointer Interactions</div>
+              <div class="text-muted" style="font-size: 0.82rem;">Click targets, hover feedback, minimum target sizes (44x44px), overlapping elements.</div>
+            </div>
+          </label>
+
+          <label class="checkbox-label p-3 card" style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+            <input type="checkbox" name="test_forms" class="form-checkbox" checked style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; font-size: 0.95rem;">Forms &amp; Input Validation</div>
+              <div class="text-muted" style="font-size: 0.82rem;">Required fields, validation messaging, label associations, autocomplete attributes.</div>
+            </div>
+          </label>
+
+          <label class="checkbox-label p-3 card" style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+            <input type="checkbox" name="test_accessibility" class="form-checkbox" checked style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; font-size: 0.95rem;">Accessibility (WCAG 2.1 Core)</div>
+              <div class="text-muted" style="font-size: 0.82rem;">Alt text, heading hierarchy (H1-H6), ARIA roles, color contrast, landmark regions.</div>
+            </div>
+          </label>
+
+          <label class="checkbox-label p-3 card" style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+            <input type="checkbox" name="test_wcag_compliance" class="form-checkbox" style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; font-size: 0.95rem;">Extended WCAG Compliance Checks</div>
+              <div class="text-muted" style="font-size: 0.82rem;">Deep audit against full WCAG 2.1 AA/AAA compliance rules.</div>
+            </div>
+          </label>
+
+          <label class="checkbox-label p-3 card" style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+            <input type="checkbox" name="test_console_errors" class="form-checkbox" checked style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; font-size: 0.95rem;">Console &amp; Runtime Errors</div>
+              <div class="text-muted" style="font-size: 0.82rem;">Capture unhandled JS exceptions, console warnings, and deprecation issues.</div>
+            </div>
+          </label>
+
+          <label class="checkbox-label p-3 card" style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+            <input type="checkbox" name="test_network_errors" class="form-checkbox" checked style="margin-top: 3px;">
+            <div>
+              <div style="font-weight: 600; font-size: 0.95rem;">Network Failure Detection</div>
+              <div class="text-muted" style="font-size: 0.82rem;">HTTP 4xx, 5xx responses, broken images, and dead internal links.</div>
+            </div>
+          </label>
+        </div>
+
+        <div class="flex justify-between pt-3">
+          <button type="button" class="btn btn-ghost prev-step-btn" data-target="basic">&larr; Back</button>
+          <button type="button" class="btn btn-primary next-step-btn" data-target="browser">Next: Browser Settings &rarr;</button>
+        </div>
+      </section>
+
+      <!-- Step 3: Browser Settings -->
+      <section class="step-panel" id="panel-browser" style="display: none;">
+        <div class="mb-4">
+          <h2 style="font-family: var(--font-serif); font-size: 1.85rem; font-weight: 500; margin-bottom: 0.25rem;">Browser Settings</h2>
+          <p class="text-muted" style="font-size: 0.95rem;">Tune viewport, concurrency, browsers, and visual captures.</p>
+        </div>
+
+        <div class="form-group mb-4">
+          <label class="form-label mb-2">Target Browsers</label>
+          <div class="checkbox-group" style="gap: 1.5rem;">
+            <label class="checkbox-label">
+              <input type="checkbox" name="browser_chromium" class="form-checkbox" checked>
+              <span>Chromium</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="browser_firefox" class="form-checkbox">
+              <span>Firefox</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="browser_webkit" class="form-checkbox">
+              <span>WebKit (Safari)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="grid mb-4" style="grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label" for="viewport_width">Viewport Width (px)</label>
+            <input type="number" id="viewport_width" name="viewport_width" class="form-input" value="1280">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="viewport_height">Viewport Height (px)</label>
+            <input type="number" id="viewport_height" name="viewport_height" class="form-input" value="720">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="timeout">Timeout (ms)</label>
+            <input type="number" id="timeout" name="timeout" class="form-input" value="30000" step="1000">
+          </div>
+        </div>
+
+        <div class="grid mb-4" style="grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label" for="workers">Parallel Page Workers</label>
+            <input type="number" id="workers" name="workers" class="form-input" value="1" min="1" max="8">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="max_interactions_per_page">Max Interactions / Page</label>
+            <input type="number" id="max_interactions_per_page" name="max_interactions_per_page" class="form-input" value="50">
+          </div>
+        </div>
+
+        <div class="card p-3 mb-4" style="background: var(--surface-secondary);">
+          <div style="font-weight: 600; font-size: 0.92rem; margin-bottom: 0.75rem;">Screenshots &amp; Artifacts</div>
+          <div class="grid" style="grid-template-columns: repeat(2, 1fr); gap: 0.75rem;">
+            <label class="checkbox-label">
+              <input type="checkbox" id="ss_enabled" name="screenshots_enabled" class="form-checkbox" checked>
+              <span>Enable Screenshots</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="ss_on_error" name="screenshots_on_error" class="form-checkbox" checked>
+              <span>Capture on Error</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="ss_on_interaction" name="screenshots_on_interaction" class="form-checkbox">
+              <span>Capture on Interaction</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="ss_full_page" name="screenshots_full_page" class="form-checkbox">
+              <span>Full Page Screenshot</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="recording_enabled" name="recording_enabled" class="form-checkbox">
+              <span>Record WebM Video</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="headless" name="headless" class="form-checkbox" checked>
+              <span>Headless Mode (Background)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="flex justify-between pt-3">
+          <button type="button" class="btn btn-ghost prev-step-btn" data-target="categories">&larr; Back</button>
+          <button type="button" class="btn btn-primary next-step-btn" data-target="auth">Next: Authentication &rarr;</button>
+        </div>
+      </section>
+
+      <!-- Step 4: Authentication -->
+      <section class="step-panel" id="panel-auth" style="display: none;">
+        <div class="mb-4">
+          <h2 style="font-family: var(--font-serif); font-size: 1.85rem; font-weight: 500; margin-bottom: 0.25rem;">Authentication</h2>
+          <p class="text-muted" style="font-size: 0.95rem;">Provide credentials for password-protected areas or user journeys.</p>
+        </div>
+
+        <div class="form-group mb-4">
+          <label class="form-label" for="auth-type-select">Authentication Method</label>
+          <select id="auth-type-select" name="auth_type" class="form-input">
+            <option value="none" selected>None (Public Testing)</option>
+            <option value="form">Form Login (Auto-fill credentials)</option>
+            <option value="basic">HTTP Basic Auth</option>
+            <option value="cookie">Session Cookie</option>
+            <option value="header">Custom Authorization Header</option>
+          </select>
+        </div>
+
+        <!-- Form login fields -->
+        <div id="auth-form-fields" class="card p-3 mb-4" style="display: none; background: var(--surface-secondary);">
+          <div class="form-group mb-3">
+            <label class="form-label" for="login_url">Login Page URL</label>
+            <input type="url" id="login_url" name="login_url" class="form-input text-mono" placeholder="https://example.com/login">
+          </div>
+          <div class="grid mb-3" style="grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="auth_username">Username / Email</label>
+              <input type="text" id="auth_username" name="auth_username" class="form-input" placeholder="user@example.com">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="auth_password">Password</label>
+              <input type="password" id="auth_password" name="auth_password" class="form-input" placeholder="••••••••">
+            </div>
+          </div>
+          <div class="grid" style="grid-template-columns: repeat(3, 1fr); gap: 0.75rem;">
+            <div class="form-group">
+              <label class="form-label" for="username_selector">Username Selector</label>
+              <input type="text" id="username_selector" name="username_selector" class="form-input text-mono" placeholder='input[name="user"]'>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="password_selector">Password Selector</label>
+              <input type="text" id="password_selector" name="password_selector" class="form-input text-mono" placeholder='input[type="password"]'>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="submit_selector">Submit Selector</label>
+              <input type="text" id="submit_selector" name="submit_selector" class="form-input text-mono" placeholder='button[type="submit"]'>
+            </div>
+          </div>
+        </div>
+
+        <!-- Basic Auth fields -->
+        <div id="auth-basic-fields" class="card p-3 mb-4" style="display: none; background: var(--surface-secondary);">
+          <div class="grid" style="grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="basic_username">HTTP Username</label>
+              <input type="text" id="basic_username" name="basic_username" class="form-input">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="basic_password">HTTP Password</label>
+              <input type="password" id="basic_password" name="basic_password" class="form-input">
+            </div>
+          </div>
+        </div>
+
+        <!-- Cookie fields -->
+        <div id="auth-cookie-fields" class="card p-3 mb-4" style="display: none; background: var(--surface-secondary);">
+          <div class="grid" style="grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="cookie_name">Cookie Name</label>
+              <input type="text" id="cookie_name" name="cookie_name" class="form-input text-mono" placeholder="session_id">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="cookie_value">Cookie Value</label>
+              <input type="password" id="cookie_value" name="cookie_value" class="form-input text-mono" placeholder="••••••••">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="cookie_domain">Domain</label>
+              <input type="text" id="cookie_domain" name="cookie_domain" class="form-input text-mono" placeholder="example.com">
+            </div>
+          </div>
+        </div>
+
+        <!-- Header fields -->
+        <div id="auth-header-fields" class="card p-3 mb-4" style="display: none; background: var(--surface-secondary);">
+          <div class="grid" style="grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+            <div class="form-group">
+              <label class="form-label" for="header_name">Header Name</label>
+              <input type="text" id="header_name" name="header_name" class="form-input text-mono" value="Authorization">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="header_value">Header Value</label>
+              <input type="password" id="header_value" name="header_value" class="form-input text-mono" placeholder="Bearer eyJhbGci...">
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-between pt-3">
+          <button type="button" class="btn btn-ghost prev-step-btn" data-target="browser">&larr; Back</button>
+          <button type="button" class="btn btn-primary next-step-btn" data-target="advanced">Next: Advanced Settings &rarr;</button>
+        </div>
+      </section>
+
+      <!-- Step 5: Advanced Settings -->
+      <section class="step-panel" id="panel-advanced" style="display: none;">
+        <div class="mb-4">
+          <h2 style="font-family: var(--font-serif); font-size: 1.85rem; font-weight: 500; margin-bottom: 0.25rem;">Advanced &amp; AI Settings</h2>
+          <p class="text-muted" style="font-size: 0.95rem;">Configure AI instructions, LLM provider, and crawler exclusions.</p>
+        </div>
+
+        <div class="form-group mb-4">
+          <label class="form-label" for="instructions">Agentic Instructions (Plain English)</label>
+          <textarea id="instructions" name="instructions" class="form-textarea" rows="3" placeholder="e.g. Verify the search bar returns results, add item to cart, verify checkout button is enabled..."></textarea>
+        </div>
+
+        <div class="grid mb-4" style="grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label" for="llm_provider">LLM Provider</label>
+            <select id="llm_provider" name="llm_provider" class="form-input">
+              <option value="anthropic" selected>Anthropic (Claude)</option>
+              <option value="openai">OpenAI (GPT)</option>
+              <option value="omnikey">OmniKey (Unified Gateway)</option>
+            </select>
+            <div id="llm_key_hint" class="text-muted mt-1" style="font-size: 0.8rem;">Requires <code>ANTHROPIC_API_KEY</code></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="ai_model">Model</label>
+            <select id="ai_model" name="ai_model" class="form-input">
+              <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+              <option value="claude-opus-4-6">claude-opus-4-6</option>
+              <option value="claude-haiku-4-5-20251001">claude-haiku-4-5-20251001</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group mb-4">
+          <label class="form-label" for="ignore_patterns">Ignore URL Patterns (one per line, regex or glob)</label>
+          <textarea id="ignore_patterns" name="ignore_patterns" class="form-textarea text-mono" rows="2" placeholder=".*logout.*&#10;.*delete.*" style="font-size: 0.85rem;"></textarea>
+        </div>
+
+        <div class="card p-3 mb-4" style="background: var(--surface-secondary);">
+          <div class="checkbox-label">
+            <input type="checkbox" id="use_plan_cache" name="use_plan_cache" class="form-checkbox" checked>
+            <div>
+              <div style="font-weight: 600; font-size: 0.92rem;">Cache AI Test Plans</div>
+              <div class="text-muted" style="font-size: 0.82rem;">Reuse previously generated AI execution plans for unchanged pages.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-between pt-3">
+          <button type="button" class="btn btn-ghost prev-step-btn" data-target="auth">&larr; Back</button>
+          <button type="button" class="btn btn-primary next-step-btn" data-target="review">Next: Review &amp; Run &rarr;</button>
+        </div>
+      </section>
+
+      <!-- Step 6: Review & Run -->
+      <section class="step-panel" id="panel-review" style="display: none;">
+        <div class="mb-4">
+          <h2 style="font-family: var(--font-serif); font-size: 1.85rem; font-weight: 500; margin-bottom: 0.25rem;">Review &amp; Run</h2>
+          <p class="text-muted" style="font-size: 0.95rem;">Verify your configuration before launching test execution.</p>
+        </div>
+
+        <div class="card p-4 mb-4" id="review-summary" style="background: var(--surface-secondary); border-radius: var(--radius-md);">
+          <!-- Populated dynamically by studio.js -->
+        </div>
+
+        <!-- Presets and export/import tools -->
+        <div class="flex items-center justify-between p-3 card mb-4" style="font-size: 0.88rem;">
+          <div class="flex items-center gap-2">
+            <span class="text-muted">Presets:</span>
+            <select id="preset-select" class="form-input" style="width: auto; padding: 0.35rem 0.65rem; font-size: 0.85rem;">
+              <option value="">Load saved preset...</option>
+            </select>
+            <button type="button" id="save-preset-btn" class="btn btn-ghost btn-sm">Save Preset</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" id="export-config-btn" class="btn btn-ghost btn-sm">Export JSON</button>
+            <label class="btn btn-ghost btn-sm" style="margin-bottom: 0; cursor: pointer;">
+              Import JSON
+              <input type="file" id="import-config-input" accept=".json" style="display: none;">
+            </label>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center pt-2">
+          <button type="button" class="btn btn-ghost prev-step-btn" data-target="advanced">&larr; Back</button>
+          <button type="submit" id="studio-submit-btn" class="btn btn-primary btn-lg" style="padding: 0.85rem 2.25rem; font-size: 1.05rem;">
+            Run Test &rarr;
+          </button>
+        </div>
+      </section>
+    </form>
+  </main>
+
+  <!-- Right Side Decorative Illustration Card -->
+  <aside class="studio-side-card">
+    <div style="position: relative; width: 100%; height: 160px; display: flex; align-items: center; justify-content: center;">
+      <!-- Subtle warm glow -->
+      <div style="position: absolute; width: 140px; height: 140px; border-radius: 50%; background: radial-gradient(circle, rgba(255,170,22,0.18) 0%, rgba(255,170,22,0) 70%);"></div>
+      
+      <!-- Mini Browser 1 -->
+      <div style="position: absolute; width: 150px; height: 100px; background: #FFFDF8; border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-md); transform: translate(-15px, -10px); z-index: 1;">
+        <div style="height: 16px; background: #F1ECE1; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 4px; padding: 0 6px;">
+          <div style="width: 5px; height: 5px; border-radius: 50%; background: #D9D2C5;"></div>
+          <div style="width: 5px; height: 5px; border-radius: 50%; background: #D9D2C5;"></div>
+          <div style="width: 5px; height: 5px; border-radius: 50%; background: #D9D2C5;"></div>
+        </div>
+        <div style="padding: 10px; display: flex; flex-direction: column; gap: 6px;">
+          <div style="height: 6px; width: 65%; background: var(--surface-active); border-radius: 3px;"></div>
+          <div style="height: 6px; width: 90%; background: var(--surface-active); border-radius: 3px;"></div>
+          <div style="height: 6px; width: 45%; background: var(--surface-active); border-radius: 3px;"></div>
+        </div>
+      </div>
+
+      <!-- Mini Browser 2 -->
+      <div style="position: absolute; width: 160px; height: 105px; background: #FFFDF8; border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow-lg); transform: translate(18px, 12px); z-index: 2;">
+        <div style="height: 16px; background: #F1ECE1; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 4px; padding: 0 6px;">
+          <div style="width: 5px; height: 5px; border-radius: 50%; background: var(--orange);"></div>
+          <div style="width: 5px; height: 5px; border-radius: 50%; background: var(--amber);"></div>
+          <div style="width: 5px; height: 5px; border-radius: 50%; background: var(--border);"></div>
+        </div>
+        <div style="padding: 10px; display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <div style="width: 14px; height: 14px; border-radius: 4px; background: rgba(255,170,22,0.25);"></div>
+            <div style="height: 6px; width: 70%; background: var(--surface-active); border-radius: 3px;"></div>
+          </div>
+          <div style="height: 6px; width: 95%; background: var(--surface-active); border-radius: 3px;"></div>
+          <div style="height: 14px; width: 50px; background: var(--ink); border-radius: 4px; margin-top: 4px;"></div>
+        </div>
+      </div>
+
+      <!-- Sparkle -->
+      <svg style="position: absolute; right: 12px; top: 12px; width: 16px; height: 16px; color: var(--amber); fill: var(--amber); z-index: 3;" viewBox="0 0 24 24">
+        <path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z"/>
+      </svg>
+    </div>
+
+    <div>
+      <h3 style="font-family: var(--font-serif); font-size: 1.25rem; font-weight: 500; margin-bottom: 0.35rem; color: var(--ink);">Configure once, test with confidence.</h3>
+      <p class="text-muted" style="font-size: 0.85rem; line-height: 1.5;">Every parameter is saved with the session report for reproducible regression audits.</p>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='studio.js') }}"></script>
+{% endblock %}

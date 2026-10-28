@@ -1,69 +1,144 @@
-// Toggle finding detail rows
-document.querySelectorAll('.finding-row').forEach(row => {
-  row.addEventListener('click', () => {
-    const detail = row.querySelector('.finding-detail');
-    if (detail) detail.style.display = detail.style.display === 'none' ? '' : 'none';
-  });
-});
+/* QA Agent - Session Report & Gallery Client */
+'use strict';
 
-// Re-run with same config: pre-fill form on index page
 (function () {
-  const configEl = document.getElementById('session-config-data');
-  if (!configEl) return;
-  const config = JSON.parse(configEl.textContent);
-  document.getElementById('rerun-btn').addEventListener('click', e => {
-    e.preventDefault();
-    if (config.urls && config.urls.length) {
-      sessionStorage.setItem('qa_rerun_config', JSON.stringify(config));
-      window.location.href = '/';
-    }
-  });
-}());
+  // ── Tab Navigation ────────────────────────────────────────────────────────────
+  const tabBtns = document.querySelectorAll('.report-tab-btn');
+  const panels = document.querySelectorAll('.report-tab-panel');
 
-// Trigger AI Narrative Analysis for the current session
-(function () {
-  const btn = document.getElementById('run-analysis-btn');
-  if (!btn) return;
+  function switchTab(tabName) {
+    tabBtns.forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tabName);
+    });
 
-  btn.addEventListener('click', async function () {
-    const domain = btn.getAttribute('data-domain') || '';
-    const sessionId = btn.getAttribute('data-session-id') || '';
-    if (!domain || !sessionId) {
-      alert('Missing domain or session ID for AI analysis.');
-      return;
-    }
-
-    btn.disabled = true;
-    btn.textContent = '⏳ Analyzing report with OmniKey AI...';
-
-    try {
-      const res = await fetch(`/api/session/${encodeURIComponent(domain)}/${encodeURIComponent(sessionId)}/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'omnikey' })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to analyze session report');
+    panels.forEach(panel => {
+      if (panel.id === `tab-panel-${tabName}`) {
+        panel.style.display = 'block';
+        panel.classList.add('active');
+      } else {
+        panel.style.display = 'none';
+        panel.classList.remove('active');
       }
-      // Reload page to display generated analysis
-      window.location.reload();
-    } catch (err) {
-      alert(`AI Analysis Error: ${err.message}`);
-      btn.disabled = false;
-      btn.textContent = '⚡ Generate AI Analysis with OmniKey';
-    }
-  });
-}());
-
-// Export / Print report to PDF
-(function () {
-  const exportBtn = document.getElementById('export-pdf-btn');
-  if (exportBtn) {
-    exportBtn.addEventListener('click', function () {
-      window.print();
     });
   }
-}());
 
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      switchTab(btn.dataset.tab);
+    });
+  });
 
+  // "View Details ->" scroll/switch
+  document.getElementById('view-details-btn')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    switchTab('issues');
+    document.getElementById('report-details')?.scrollIntoView({ behavior: 'smooth' });
+  });
+
+  // ── Issues Severity Filter ───────────────────────────────────────────────────
+  const filterBtns = document.querySelectorAll('.issue-filter-btn');
+  const findingRows = document.querySelectorAll('.finding-row');
+
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const sev = btn.dataset.filter;
+
+      findingRows.forEach(row => {
+        if (sev === 'all' || row.dataset.severity === sev) {
+          row.style.display = '';
+        } else {
+          row.style.display = 'none';
+        }
+      });
+    });
+  });
+
+  // Expand / collapse finding detail
+  findingRows.forEach(row => {
+    const titleEl = row.querySelector('.finding-title');
+    const detailEl = row.querySelector('.finding-detail');
+    if (titleEl && detailEl) {
+      titleEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        detailEl.style.display = detailEl.style.display === 'none' ? 'block' : 'none';
+      });
+    }
+  });
+
+  // ── Screenshot Lightbox Modal ─────────────────────────────────────────────────
+  const lightbox = document.getElementById('lightbox-modal');
+  const lightboxImg = document.getElementById('lightbox-img');
+  const lightboxClose = document.getElementById('lightbox-close');
+
+  function openLightbox(src) {
+    if (!lightbox || !lightboxImg) return;
+    lightboxImg.src = src;
+    lightbox.classList.add('active');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    if (!lightbox) return;
+    lightbox.classList.remove('active');
+    if (lightboxImg) lightboxImg.src = '';
+    document.body.style.overflow = '';
+  }
+
+  document.querySelectorAll('.gallery-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const src = item.dataset.src;
+      if (src) openLightbox(src);
+    });
+  });
+
+  if (lightboxClose) {
+    lightboxClose.addEventListener('click', closeLightbox);
+  }
+
+  if (lightbox) {
+    lightbox.addEventListener('click', (e) => {
+      if (e.target === lightbox) closeLightbox();
+    });
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && lightbox && lightbox.classList.contains('active')) {
+      closeLightbox();
+    }
+  });
+
+  // ── PDF Export Button ─────────────────────────────────────────────────────────
+  document.getElementById('export-pdf-btn')?.addEventListener('click', () => {
+    window.print();
+  });
+
+  // ── AI Analysis Trigger ───────────────────────────────────────────────────────
+  const aiBtn = document.getElementById('run-analysis-btn');
+  if (aiBtn) {
+    aiBtn.addEventListener('click', async () => {
+      const domain = aiBtn.dataset.domain;
+      const sessionId = aiBtn.dataset.sessionId;
+      if (!domain || !sessionId) return;
+
+      aiBtn.disabled = true;
+      aiBtn.textContent = '⏳ Analyzing with AI...';
+
+      try {
+        const res = await fetch(`/api/session/${encodeURIComponent(domain)}/${encodeURIComponent(sessionId)}/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ provider: 'anthropic' }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'AI analysis request failed');
+        window.location.reload();
+      } catch (err) {
+        alert(`AI Analysis: ${err.message}`);
+        aiBtn.disabled = false;
+        aiBtn.textContent = '⚡ Deep Analysis';
+      }
+    });
+  }
+})();

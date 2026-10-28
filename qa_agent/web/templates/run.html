@@ -1,67 +1,165 @@
 {% extends "base.html" %}
-{% block title %}Run {{ job_id }} — QA Agent{% endblock %}
+
+{% block title %}Running Test {{ job_id }} – QA Agent{% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <div class="run-header">
-    <div>
-      <h1>Test Run <code class="job-id">{{ job_id }}</code></h1>
-      <div id="run-meta" class="text-muted"></div>
+<div class="monitor-layout" id="run-container" data-job-id="{{ job_id | e }}">
+  <!-- Left Vertical Progress Stepper -->
+  <aside class="vertical-stepper" id="monitor-stepper" aria-label="Test stages">
+    <div class="vert-step-item" id="stage-init">
+      <span class="vert-step-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </span>
+      <span>Initializing</span>
     </div>
-    <div id="run-header" class="run-header-actions" data-job-id="{{ job_id | e }}">
-      <span id="status-badge" class="badge badge-queued">Queued</span>
-      <button id="stop-btn" class="btn btn-danger" style="display:none">Stop</button>
+    <div class="vert-step-item active" id="stage-running">
+      <span class="vert-step-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </span>
+      <span>Running Tests</span>
     </div>
-  </div>
-</div>
-
-<div class="run-stats card" id="run-stats" style="display:none">
-  <div class="stat">
-    <span class="stat-value" id="stat-pages">0</span>
-    <span class="stat-label">Pages tested</span>
-  </div>
-  <div class="stat">
-    <span class="stat-value" id="stat-findings">0</span>
-    <span class="stat-label">Findings</span>
-  </div>
-  <div class="stat">
-    <span class="stat-value" id="stat-elapsed">0:00</span>
-    <span class="stat-label">Elapsed</span>
-  </div>
-  <div class="stat stat-url-wrap">
-    <span class="stat-value text-muted" id="stat-url" style="font-size:0.8rem;word-break:break-all"></span>
-    <span class="stat-label">Current URL</span>
-  </div>
-</div>
-
-<div id="complete-banner" class="alert alert-success" style="display:none">
-  Test complete. <a id="session-link" href="#">View session results →</a>
-</div>
-<div id="error-banner" class="alert alert-error" style="display:none"></div>
-<div id="stopped-banner" class="alert alert-warning" style="display:none">
-  Test stopped by user.
-  <span id="stopped-session-link" style="display:none">
-    <a id="stopped-link" href="#">View partial results →</a>
-  </span>
-</div>
-
-<div class="card log-card">
-  <div class="log-toolbar">
-    <span class="log-title">Output</span>
-    <div class="log-filter-group" role="group" aria-label="Log filter">
-      <button type="button" class="btn btn-ghost small log-filter active" data-filter="all">All</button>
-      <button type="button" class="btn btn-ghost small log-filter" data-filter="finding">Findings</button>
-      <button type="button" class="btn btn-ghost small log-filter" data-filter="error">Errors</button>
+    <div class="vert-step-item" id="stage-analyzing">
+      <span class="vert-step-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </span>
+      <span>Analyzing Results</span>
     </div>
-    <label class="check-label small">
-      <input type="checkbox" id="autoscroll" checked> Auto-scroll
-    </label>
-    <button type="button" class="btn btn-ghost small" id="clear-log-btn">Clear</button>
-  </div>
-  <div id="log" class="log"></div>
+    <div class="vert-step-item" id="stage-report">
+      <span class="vert-step-icon">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </span>
+      <span>Generating Report</span>
+    </div>
+
+    <!-- Live Metrics Box -->
+    <div class="card p-3 mt-4" style="font-size: 0.85rem; background: var(--surface);">
+      <div class="text-muted mb-2" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Live Metrics</div>
+      <div class="flex justify-between py-1 border-bottom" style="border-color: var(--border);">
+        <span class="text-muted">Pages:</span>
+        <strong id="stat-pages" class="text-mono">0</strong>
+      </div>
+      <div class="flex justify-between py-1 border-bottom" style="border-color: var(--border);">
+        <span class="text-muted">Findings:</span>
+        <strong id="stat-findings" class="text-mono text-orange">0</strong>
+      </div>
+      <div class="flex justify-between py-1">
+        <span class="text-muted">Elapsed:</span>
+        <strong id="stat-elapsed" class="text-mono">0:00</strong>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Monitor Panel -->
+  <main>
+    <!-- Top Action / Progress Header -->
+    <div class="monitor-header">
+      <div class="monitor-progress-group">
+        <!-- Circular Progress Ring -->
+        <div class="progress-circle-wrap">
+          <svg class="progress-circle-svg" viewBox="0 0 90 90">
+            <circle class="progress-circle-bg" cx="45" cy="45" r="38"></circle>
+            <circle id="progress-circle-bar" class="progress-circle-bar" cx="45" cy="45" r="38" stroke-dasharray="238.76" stroke-dashoffset="190"></circle>
+          </svg>
+          <div id="progress-pct-text" class="progress-circle-text">20%</div>
+        </div>
+
+        <div>
+          <h1 id="monitor-heading" style="font-family: var(--font-serif); font-size: 2.25rem; font-weight: 500; margin: 0; line-height: 1.15; color: var(--ink);">
+            Running tests...
+          </h1>
+          <p id="monitor-subheading" class="text-muted" style="margin: 0.35rem 0 0 0; font-size: 0.95rem;">
+            This may take a few minutes.
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <button id="stop-btn" type="button" class="btn btn-outline-danger">
+          Stop Test
+        </button>
+      </div>
+    </div>
+
+    <!-- Notification Banners -->
+    <div id="complete-banner" class="alert-box alert-success mb-4" style="display: none;">
+      <div class="flex items-center justify-between">
+        <div>
+          <strong>Test Completed!</strong> All automated test suites and reports have finished successfully.
+        </div>
+        <a id="session-link" href="#" class="btn btn-primary btn-sm" style="margin-left: 1rem;">View Results &rarr;</a>
+      </div>
+    </div>
+
+    <div id="stopped-banner" class="alert-box alert-warning mb-4" style="display: none;">
+      <div class="flex items-center justify-between">
+        <div>
+          <strong>Test stopped by user.</strong>
+          <span id="stopped-session-link" style="display: none; margin-left: 0.5rem;">
+            Partial results are saved.
+          </span>
+        </div>
+        <a id="stopped-link" href="#" class="btn btn-ghost btn-sm" style="display: none;">View Partial Results &rarr;</a>
+      </div>
+    </div>
+
+    <div id="error-banner" class="alert-box alert-error mb-4" style="display: none;"></div>
+
+    <!-- Split Monitor Panels: Dark Terminal (Left) & Live Preview (Right) -->
+    <div class="monitor-panels-grid">
+      <!-- Dark Terminal Box -->
+      <div class="terminal-box">
+        <div class="terminal-header">
+          <div class="terminal-tabs">
+            <button type="button" class="terminal-tab active" data-tab="logs">Logs</button>
+            <button type="button" class="terminal-tab" data-tab="screenshots">
+              Screenshots <span id="ss-count-badge" style="opacity: 0.75;">(0)</span>
+            </button>
+            <button type="button" class="terminal-tab" data-tab="preview">Live Preview</button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" id="clear-log-btn" class="btn btn-ghost btn-sm" style="color: #A39B92; font-size: 0.75rem; padding: 0.2rem 0.5rem;">Clear</button>
+          </div>
+        </div>
+
+        <div id="terminal-content" class="terminal-content">
+          <!-- Live stream logs inserted here -->
+        </div>
+      </div>
+
+      <!-- Live Preview Card -->
+      <div class="preview-card" id="preview-panel-container">
+        <div class="preview-browser-bar">
+          <span style="font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Live Preview</span>
+          <span id="current-url-display" class="text-mono" style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">-</span>
+        </div>
+        <div class="preview-frame" id="live-preview-box">
+          <div id="preview-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); gap: 0.75rem; padding: 2rem; text-align: center;">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <div style="font-size: 0.85rem;">Waiting for browser interactions...</div>
+          </div>
+          <img id="live-screenshot-img" src="" alt="Live screenshot" style="display: none; width: 100%; height: 100%; object-fit: contain;">
+        </div>
+        <div class="preview-browser-bar" style="border-top: 1px solid var(--border-subtle); border-bottom: none;">
+          <span id="preview-timestamp" class="text-mono" style="font-size: 0.75rem;">Standby</span>
+          <button type="button" id="fullscreen-preview-btn" class="btn btn-ghost btn-sm" title="Expand preview" style="padding: 0.15rem 0.4rem;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <polyline points="9 21 3 21 3 15"></polyline>
+              <line x1="21" y1="3" x2="14" y2="10"></line>
+              <line x1="3" y1="21" x2="10" y2="14"></line>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/run.js"></script>
+<script src="{{ url_for('static', filename='run.js') }}"></script>
 {% endblock %}
