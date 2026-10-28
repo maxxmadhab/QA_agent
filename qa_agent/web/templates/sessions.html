@@ -3,28 +3,39 @@
 {% block title %}Sessions – QA Agent{% endblock %}
 
 {% block content %}
-<div class="flex items-center justify-between mb-4 pb-2">
-  <div>
-    <h1 style="font-family: var(--font-serif); font-size: 2.25rem; font-weight: 500; margin: 0; color: var(--ink);">Test Sessions</h1>
-    <p class="text-muted" style="margin: 0.25rem 0 0 0; font-size: 0.95rem;">Review past test runs, compliance audits, and regression reports.</p>
+<div class="sessions-header">
+  <div class="sessions-header-left">
+    <h1 class="sessions-title">Test Sessions</h1>
+    <p class="sessions-subtitle">Review past test runs, compliance audits, and regression reports.</p>
   </div>
-  <div class="flex items-center gap-3">
-    <div style="position: relative;">
-      <input type="search" id="search" class="form-input" placeholder="Filter by domain or URL…" style="padding-left: 2.25rem; width: 260px; font-size: 0.88rem; border-radius: var(--radius-pill);">
-      <svg style="position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; color: var(--text-muted); pointer-events: none;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+  <div class="sessions-header-actions">
+    <div class="sessions-search-wrap">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="11" cy="11" r="8"></circle>
         <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
       </svg>
+      <input type="search" id="search" class="sessions-search-input" placeholder="Search domain, URL, or ID…">
     </div>
-    <a href="/quick-test" class="btn btn-primary" style="border-radius: var(--radius-pill); padding: 0.55rem 1.25rem;">+ New Test</a>
+    <a href="/quick-test" class="btn new-test-top-btn">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+      New Test
+    </a>
   </div>
 </div>
 
-<div id="active-jobs-container" class="mb-4"></div>
+<!-- Active Runs Notification Container -->
+<div id="active-jobs-container"></div>
 
+<!-- Domain Filter Pills -->
+<div id="domain-filters" class="domain-filter-bar" style="display: none;"></div>
+
+<!-- Individual Sessions List -->
 <div id="sessions-container">
   <div class="card p-5 text-center text-muted">
-    <div style="font-size: 1.1rem; margin-bottom: 0.5rem;">Loading test sessions…</div>
+    <div style="font-size: 1.05rem;">Loading test sessions…</div>
   </div>
 </div>
 {% endblock %}

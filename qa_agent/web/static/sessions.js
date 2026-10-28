@@ -1,108 +1,277 @@
+/* QA Agent - Sessions Archive Client */
+'use strict';
+
 (function () {
   const container = document.getElementById('sessions-container');
   const activeJobsContainer = document.getElementById('active-jobs-container');
-  const search = document.getElementById('search');
+  const domainFiltersContainer = document.getElementById('domain-filters');
+  const searchInput = document.getElementById('search');
+
+  let allSessions = [];
+  let selectedDomain = 'all';
 
   const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'];
 
-  function severityBadge(sev, count) {
-    return count > 0
-      ? `<span class="badge badge-${sev}" title="${sev}">${count}</span>`
-      : '';
-  }
-
   function formatDuration(secs) {
-    if (!secs) return '—';
-    if (secs < 60) return Math.round(secs) + 's';
-    return Math.floor(secs / 60) + 'm ' + Math.round(secs % 60) + 's';
+    if (!secs && secs !== 0) return '—';
+    const s = Math.round(secs);
+    if (s < 60) return `${s}s`;
+    const mins = Math.floor(s / 60);
+    const rem = s % 60;
+    return `${mins}m ${rem}s`;
   }
 
   function formatDate(iso) {
     if (!iso) return '—';
-    return new Date(iso).toLocaleString();
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch (_) {
+      return iso;
+    }
   }
 
-  function renderSessions(sessions) {
-    if (!sessions.length) {
-      container.innerHTML = `<div class="empty-state">
-        <p>No sessions found. <a href="/">Run a test</a> to get started.</p>
-      </div>`;
+  function renderSeverityBadges(s) {
+    const total = s.total_findings || 0;
+    if (total === 0) {
+      return `
+        <span class="badge" style="background: #E8F5E9; color: #2E7D32;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
+          Clean Test (0 Issues)
+        </span>
+      `;
+    }
+
+    const pills = [];
+    const counts = s.findings_by_severity || {};
+
+    for (const sev of SEVERITY_ORDER) {
+      const count = counts[sev] || 0;
+      if (count > 0) {
+        const label = sev.charAt(0).toUpperCase() + sev.slice(1);
+        pills.push(`<span class="badge badge-${sev}">${count} ${label}</span>`);
+      }
+    }
+
+    if (!pills.length) {
+      pills.push(`<span class="badge badge-medium">${total} Issue${total !== 1 ? 's' : ''}</span>`);
+    }
+
+    return pills.join(' ');
+  }
+
+  function renderStatusBadge(s) {
+    const total = s.total_findings || 0;
+    const critical = (s.findings_by_severity && s.findings_by_severity.critical) || 0;
+    const high = (s.findings_by_severity && s.findings_by_severity.high) || 0;
+
+    if (total === 0) {
+      return `<span class="badge" style="background: #E8F5E9; color: #2E7D32;">Passed</span>`;
+    } else if (critical > 0 || high > 0) {
+      return `<span class="badge badge-critical">${critical + high} Blocker${critical + high !== 1 ? 's' : ''}</span>`;
+    } else {
+      return `<span class="badge badge-medium">${total} Issue${total !== 1 ? 's' : ''}</span>`;
+    }
+  }
+
+  function renderDomainFilters() {
+    if (!domainFiltersContainer || !allSessions.length) {
+      if (domainFiltersContainer) domainFiltersContainer.style.display = 'none';
       return;
     }
 
-    const grouped = {};
-    sessions.forEach(s => {
-      (grouped[s.domain] = grouped[s.domain] || []).push(s);
+    const domainCounts = {};
+    allSessions.forEach(s => {
+      const d = s.domain || 'unknown';
+      domainCounts[d] = (domainCounts[d] || 0) + 1;
     });
 
-    let html = '';
-    Object.keys(grouped).sort().forEach(domain => {
-      html += `<details class="domain-group" open>
-        <summary class="domain-title">
-          <span class="domain-name">${domain}</span>
-          <span class="domain-count">${grouped[domain].length} session${grouped[domain].length !== 1 ? 's' : ''}</span>
-        </summary>
-        <div class="session-list">`;
+    const domains = Object.keys(domainCounts).sort();
+    if (domains.length <= 1) {
+      domainFiltersContainer.style.display = 'none';
+      return;
+    }
 
-      grouped[domain].forEach(s => {
-        const severityBadges = SEVERITY_ORDER
-          .map(sev => severityBadge(sev, s.findings_by_severity?.[sev] || 0))
-          .join('');
-        const urls = (s.urls || []).map(u => `<span class="url-tag">${u}</span>`).join('');
+    domainFiltersContainer.style.display = 'flex';
+    let html = `
+      <button type="button" class="domain-pill-btn ${selectedDomain === 'all' ? 'active' : ''}" data-domain="all">
+        All Domains <span class="domain-pill-count">${allSessions.length}</span>
+      </button>
+    `;
 
-        html += `<a class="session-card" href="/session/${s.domain}/${s.session_id}">
-          <div class="session-card-main">
-            <code class="session-id">${s.session_id}</code>
-            <div class="session-urls">${urls}</div>
-          </div>
-          <div class="session-card-meta">
-            <span class="text-muted">${formatDate(s.start_time)}</span>
-            <span class="text-muted">${formatDuration(s.duration_seconds)}</span>
-            <span class="findings-count ${s.total_findings > 0 ? 'has-findings' : ''}">${s.total_findings} finding${s.total_findings !== 1 ? 's' : ''}</span>
-            <div class="severity-badges">${severityBadges}</div>
-          </div>
-        </a>`;
+    domains.forEach(d => {
+      html += `
+        <button type="button" class="domain-pill-btn ${selectedDomain === d ? 'active' : ''}" data-domain="${escapeHtml(d)}">
+          ${escapeHtml(d)} <span class="domain-pill-count">${domainCounts[d]}</span>
+        </button>
+      `;
+    });
+
+    domainFiltersContainer.innerHTML = html;
+
+    domainFiltersContainer.querySelectorAll('.domain-pill-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedDomain = btn.dataset.domain;
+        domainFiltersContainer.querySelectorAll('.domain-pill-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        applyFilters();
       });
+    });
+  }
 
-      html += '</div></details>';
+  function renderSessionsList(sessions) {
+    if (!sessions.length) {
+      container.innerHTML = `
+        <div class="card p-5 text-center" style="background: var(--surface);">
+          <div style="font-family: var(--font-serif); font-size: 1.5rem; color: var(--ink); margin-bottom: 0.5rem;">
+            No test sessions found
+          </div>
+          <p class="text-muted" style="margin-bottom: 1.5rem;">No past test records match your filter criteria.</p>
+          <a href="/quick-test" class="btn btn-primary" style="border-radius: var(--radius-pill); padding: 0.6rem 1.5rem;">
+            Run a New Test
+          </a>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    sessions.forEach(s => {
+      const targetUrl = (s.urls && s.urls.length) ? s.urls[0] : `https://${s.domain}`;
+      const urlCountText = (s.urls && s.urls.length > 1) ? ` +${s.urls.length - 1} more` : '';
+      const pages = s.pages_tested || (s.urls ? s.urls.length : 1);
+
+      html += `
+        <article class="session-card-clean" data-domain="${escapeHtml(s.domain)}" data-id="${escapeHtml(s.session_id)}">
+          <div class="session-card-top">
+            <div class="session-target-info">
+              <div class="session-domain-badge-wrap">
+                <span class="session-domain-heading">${escapeHtml(s.domain)}</span>
+                <span class="session-id-pill">#${escapeHtml(s.session_id)}</span>
+              </div>
+              <div class="session-url-preview" title="${escapeHtml(targetUrl)}">
+                ${escapeHtml(targetUrl)}${urlCountText}
+              </div>
+            </div>
+
+            <div class="session-card-actions">
+              ${renderStatusBadge(s)}
+              <a href="/session/${encodeURIComponent(s.domain)}/${encodeURIComponent(s.session_id)}" class="session-view-report-btn">
+                View Report &rarr;
+              </a>
+            </div>
+          </div>
+
+          <div class="session-card-divider"></div>
+
+          <div class="session-card-bottom">
+            <div class="session-meta-chips">
+              <span class="session-chip" title="Start Time">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="16" y1="2" x2="16" y2="6"></line>
+                  <line x1="8" y1="2" x2="8" y2="6"></line>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                </svg>
+                ${formatDate(s.start_time)}
+              </span>
+
+              <span class="session-chip" title="Execution Duration">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                ${formatDuration(s.duration_seconds)}
+              </span>
+
+              <span class="session-chip" title="Pages Audited">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                ${pages} page${pages !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <div class="session-findings-summary">
+              ${renderSeverityBadges(s)}
+            </div>
+          </div>
+        </article>
+      `;
     });
 
     container.innerHTML = html;
   }
 
-  const STATUS_LABELS = { queued: 'Queued', running: 'Running', stopping: 'Stopping', stopped: 'Stopped', completed: 'Completed', failed: 'Failed' };
+  function applyFilters() {
+    const q = (searchInput ? searchInput.value.trim().toLowerCase() : '');
 
+    let filtered = allSessions.slice();
+
+    if (selectedDomain !== 'all') {
+      filtered = filtered.filter(s => s.domain === selectedDomain);
+    }
+
+    if (q) {
+      filtered = filtered.filter(s => {
+        const domainMatch = s.domain && s.domain.toLowerCase().includes(q);
+        const idMatch = s.session_id && s.session_id.toLowerCase().includes(q);
+        const urlMatch = s.urls && s.urls.some(u => u.toLowerCase().includes(q));
+        return domainMatch || idMatch || urlMatch;
+      });
+    }
+
+    renderSessionsList(filtered);
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Active Live Jobs ─────────────────────────────────────────────────────────
   function renderActiveJobs(jobs) {
-    const active = jobs.filter(j => !['completed', 'stopped', 'failed'].includes(j.status));
+    if (!activeJobsContainer) return;
+    const active = (jobs || []).filter(j => !['completed', 'stopped', 'failed'].includes(j.status));
+
     if (!active.length) {
       activeJobsContainer.innerHTML = '';
       return;
     }
 
-    let html = `<details class="domain-group" open>
-      <summary class="domain-title">
-        <span class="domain-name">Active Runs</span>
-        <span class="domain-count">${active.length} in progress</span>
-      </summary>
-      <div class="session-list">`;
-
+    let html = '';
     active.forEach(j => {
-      const domain = j.domain || '…';
-      const statusCls = 'badge-' + (j.status === 'running' ? 'running' : 'queued');
-      html += `<a class="session-card" href="/run/${j.job_id}">
-        <div class="session-card-main">
-          <code class="session-id">${j.job_id}</code>
-          <span class="badge ${statusCls}">${STATUS_LABELS[j.status] || j.status}</span>
-          <span class="text-muted" style="font-size:0.85rem">${domain}</span>
+      const domain = j.domain || 'In progress';
+      html += `
+        <div class="active-job-card">
+          <div class="flex items-center">
+            <span class="active-job-pulse"></span>
+            <div>
+              <strong>Test Run #${escapeHtml(j.job_id)}</strong> on <code>${escapeHtml(domain)}</code>
+              <span class="text-muted" style="margin-left: 0.5rem; font-size: 0.85rem;">
+                (${j.pages_tested || 0} page(s) tested, ${j.total_findings || 0} finding(s))
+              </span>
+            </div>
+          </div>
+          <a href="/run/${encodeURIComponent(j.job_id)}" class="btn btn-primary btn-sm" style="border-radius: var(--radius-pill); padding: 0.35rem 1rem;">
+            View Live Run &rarr;
+          </a>
         </div>
-        <div class="session-card-meta">
-          <span class="text-muted">${j.pages_tested} page${j.pages_tested !== 1 ? 's' : ''} tested</span>
-          <span class="findings-count ${j.total_findings > 0 ? 'has-findings' : ''}">${j.total_findings} finding${j.total_findings !== 1 ? 's' : ''}</span>
-        </div>
-      </a>`;
+      `;
     });
 
-    html += '</div></details>';
     activeJobsContainer.innerHTML = html;
   }
 
@@ -113,35 +282,36 @@
       .catch(() => {});
   }
 
-  function load(query) {
-    const url = '/api/sessions?limit=200' + (query ? '&domain=' + encodeURIComponent(query) : '');
-    fetch(url)
+  // ── Load Sessions from API ───────────────────────────────────────────────────
+  function loadSessions() {
+    fetch('/api/sessions?limit=200')
       .then(r => r.json())
       .then(data => {
-        let sessions = data.sessions;
-        if (query) {
-          const q = query.toLowerCase();
-          sessions = sessions.filter(s =>
-            s.domain.toLowerCase().includes(q) ||
-            (s.urls || []).some(u => u.toLowerCase().includes(q))
-          );
-        }
-        renderSessions(sessions);
+        allSessions = data.sessions || [];
+        renderDomainFilters();
+        applyFilters();
       })
       .catch(() => {
-        container.innerHTML = '<div class="alert alert-error">Failed to load sessions.</div>';
+        container.innerHTML = `
+          <div class="alert alert-error">
+            Failed to load test sessions from server.
+          </div>
+        `;
       });
   }
 
-  load();
+  loadSessions();
   loadActiveJobs();
 
-  const activeJobsInterval = setInterval(loadActiveJobs, 5000);
-  window.addEventListener('unload', () => clearInterval(activeJobsInterval));
+  const jobsPoll = setInterval(loadActiveJobs, 4000);
+  window.addEventListener('beforeunload', () => clearInterval(jobsPoll));
 
-  let debounce;
-  search.addEventListener('input', () => {
-    clearTimeout(debounce);
-    debounce = setTimeout(() => load(search.value.trim()), 300);
-  });
-}());
+  // ── Search Input ────────────────────────────────────────────────────────────
+  if (searchInput) {
+    let debounceTimer;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(applyFilters, 200);
+    });
+  }
+})();

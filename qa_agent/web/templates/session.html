@@ -5,8 +5,8 @@
 {% block content %}
 <div class="mb-3">
   <div class="breadcrumb text-muted" style="font-size: 0.85rem;">
-    <a href="/sessions" style="color: var(--text-muted); text-decoration: none;">Sessions</a> / 
-    <span>{{ domain }}</span> / 
+    <a href="/sessions" style="color: var(--text-muted); text-decoration: none;">Sessions</a> /
+    <span>{{ domain }}</span> /
     <span class="text-mono">{{ session.session_id }}</span>
   </div>
 </div>
@@ -20,7 +20,8 @@
       </svg>
     </div>
     <div>
-      <h1 style="font-family: var(--font-serif); font-size: 2.75rem; font-weight: 500; margin: 0; line-height: 1.1; color: var(--ink);">
+      <h1
+        style="font-family: var(--font-serif); font-size: 2.75rem; font-weight: 500; margin: 0; line-height: 1.1; color: var(--ink);">
         Test Completed!
       </h1>
       <p class="text-muted" style="margin: 0.35rem 0 0 0; font-size: 1.05rem;">
@@ -31,23 +32,25 @@
 
   <div class="flex items-center gap-3">
     {% if session.reports and session.reports.pdf %}
-      <a href="{{ session.reports.pdf }}" download class="btn btn-primary btn-lg" style="border-radius: var(--radius-pill); padding: 0.75rem 1.75rem; display: inline-flex; align-items: center; gap: 0.5rem;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        Download PDF
-      </a>
+    <a href="{{ session.reports.pdf }}" download class="btn btn-primary btn-lg"
+      style="border-radius: var(--radius-pill); padding: 0.75rem 1.75rem; display: inline-flex; align-items: center; gap: 0.5rem;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      Download PDF
+    </a>
     {% else %}
-      <button type="button" id="export-pdf-btn" class="btn btn-primary btn-lg" style="border-radius: var(--radius-pill); padding: 0.75rem 1.75rem; display: inline-flex; align-items: center; gap: 0.5rem;">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          <polyline points="7 10 12 15 17 10"></polyline>
-          <line x1="12" y1="15" x2="12" y2="3"></line>
-        </svg>
-        Download PDF
-      </button>
+    <button type="button" id="export-pdf-btn" class="btn btn-primary btn-lg"
+      style="border-radius: var(--radius-pill); padding: 0.75rem 1.75rem; display: inline-flex; align-items: center; gap: 0.5rem;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+      Download PDF
+    </button>
     {% endif %}
 
     <a href="#report-details" id="view-details-btn" class="btn btn-ghost" style="font-weight: 600;">
@@ -72,8 +75,10 @@
     <div class="metric-card-lbl">Passed Tests</div>
   </div>
   <div class="metric-card">
-    {% set suggestions_count = (session.findings_by_severity.get('low', 0) if session.findings_by_severity else 0) + (session.findings_by_severity.get('info', 0) if session.findings_by_severity else 0) %}
-    <div class="metric-card-val text-amber">{{ suggestions_count if suggestions_count > 0 else (2 if session.total_findings > 0 else 0) }}</div>
+    {% set suggestions_count = (session.findings_by_severity.get('low', 0) if session.findings_by_severity else 0) +
+    (session.findings_by_severity.get('info', 0) if session.findings_by_severity else 0) %}
+    <div class="metric-card-val text-amber">{{ suggestions_count if suggestions_count > 0 else (2 if
+      session.total_findings > 0 else 0) }}</div>
     <div class="metric-card-lbl">Suggestions</div>
   </div>
 </div>
@@ -82,29 +87,29 @@
 <div class="ai-summary-card">
   <div class="ai-summary-sparkle">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="var(--orange)" stroke="none">
-      <path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z"/>
+      <path d="M12 0L14.59 9.41L24 12L14.59 14.59L12 24L9.41 14.59L0 12L9.41 9.41L12 0Z" />
     </svg>
   </div>
   <div class="ai-summary-body" style="flex: 1;">
     <div class="flex items-center justify-between mb-1">
       <h3 style="margin: 0; font-size: 1.1rem; font-weight: 600;">AI Summary</h3>
-      <button id="run-analysis-btn" class="btn btn-ghost btn-sm"
-              data-domain="{{ session.domain or domain }}"
-              data-session-id="{{ session.session_id }}"
-              style="font-size: 0.8rem; padding: 0.2rem 0.6rem;">
+      <button id="run-analysis-btn" class="btn btn-ghost btn-sm" data-domain="{{ session.domain or domain }}"
+        data-session-id="{{ session.session_id }}" style="font-size: 0.8rem; padding: 0.2rem 0.6rem;">
         {% if session.summary %}🔄 Re-analyze with AI{% else %}⚡ Deep Analysis{% endif %}
       </button>
     </div>
     {% if session.summary and session.summary.executive_summary %}
-      <p style="margin: 0.25rem 0 0 0;">{{ session.summary.executive_summary }}</p>
+    <p style="margin: 0.25rem 0 0 0;">{{ session.summary.executive_summary }}</p>
     {% elif session.total_findings == 0 %}
-      <p style="margin: 0.25rem 0 0 0;">
-        Your website is performing exceptionally well! All key user flows, navigation checks, forms, and accessibility standards passed with zero critical errors.
-      </p>
+    <p style="margin: 0.25rem 0 0 0;">
+      Your website is performing exceptionally well! All key user flows, navigation checks, forms, and accessibility
+      standards passed with zero critical errors.
+    </p>
     {% else %}
-      <p style="margin: 0.25rem 0 0 0;">
-        Your website is generally working well. We found {{ session.total_findings }} issue(s) that should be addressed to optimize accessibility, navigation, and user experience.
-      </p>
+    <p style="margin: 0.25rem 0 0 0;">
+      Your website is generally working well. We found {{ session.total_findings }} issue(s) that should be addressed to
+      optimize accessibility, navigation, and user experience.
+    </p>
     {% endif %}
   </div>
 </div>
@@ -155,7 +160,9 @@
 
     <button type="button" class="report-tab-btn" data-tab="ai-analysis">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        <polygon
+          points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2">
+        </polygon>
       </svg>
       <span>AI Analysis</span>
     </button>
@@ -174,31 +181,35 @@
     <!-- Panel 1: Overview -->
     <section class="report-tab-panel active" id="tab-panel-overview">
       <div class="card p-4 mb-4">
-        <h2 style="font-family: var(--font-serif); font-size: 1.5rem; margin-bottom: 1.25rem;">Severity Distribution</h2>
+        <h2 style="font-family: var(--font-serif); font-size: 1.5rem; margin-bottom: 1.25rem;">Severity Distribution
+        </h2>
         {% if session.findings_by_severity and session.total_findings > 0 %}
-          <div class="severity-bars" style="display: flex; flex-direction: column; gap: 0.85rem;">
-            {% for sev in ['critical', 'high', 'medium', 'low', 'info'] %}
-              {% set count = session.findings_by_severity.get(sev, 0) %}
-              {% if count > 0 %}
-              <div class="flex items-center gap-3">
-                <span class="badge badge-{{ sev }}" style="width: 80px; justify-content: center;">{{ sev }}</span>
-                <div style="flex: 1; height: 10px; background: #EBE5DB; border-radius: 5px; overflow: hidden;">
-                  <div class="badge-{{ sev }}" style="height: 100%; width: {{ (count / session.total_findings * 100) | int }}%; border-radius: 5px;"></div>
-                </div>
-                <span class="text-mono" style="font-weight: 600; width: 30px; text-align: right;">{{ count }}</span>
+        <div class="severity-bars" style="display: flex; flex-direction: column; gap: 0.85rem;">
+          {% for sev in ['critical', 'high', 'medium', 'low', 'info'] %}
+          {% set count = session.findings_by_severity.get(sev, 0) %}
+          {% if count > 0 %}
+          <div class="flex items-center gap-3">
+            <span class="badge badge-{{ sev }}" style="width: 80px; justify-content: center;">{{ sev }}</span>
+            <div style="flex: 1; height: 10px; background: #EBE5DB; border-radius: 5px; overflow: hidden;">
+              <div class="badge-{{ sev }}"
+                style="height: 100%; width: {{ (count / session.total_findings * 100) | int }}%; border-radius: 5px;">
               </div>
-              {% endif %}
-            {% endfor %}
+            </div>
+            <span class="text-mono" style="font-weight: 600; width: 30px; text-align: right;">{{ count }}</span>
           </div>
+          {% endif %}
+          {% endfor %}
+        </div>
         {% else %}
-          <p class="text-muted" style="margin: 0;">No issues found. Your test run was completely clean!</p>
+        <p class="text-muted" style="margin: 0;">No issues found. Your test run was completely clean!</p>
         {% endif %}
       </div>
 
       <!-- Cross Browser Matrix if present -->
       {% if session.cross_browser_comparison %}
       <div class="card p-4 mb-4">
-        <h2 style="font-family: var(--font-serif); font-size: 1.5rem; margin-bottom: 1rem;">Cross-Browser Compatibility Matrix</h2>
+        <h2 style="font-family: var(--font-serif); font-size: 1.5rem; margin-bottom: 1rem;">Cross-Browser Compatibility
+          Matrix</h2>
         <div class="table-wrapper">
           <table class="findings-table">
             <thead>
@@ -216,7 +227,8 @@
                 <td><strong>{{ b | title }}</strong></td>
                 <td>{{ info.version or 'Default' }}</td>
                 <td>
-                  <span class="badge badge-{% if info.status == 'passed' %}info{% elif info.status == 'issues_found' %}high{% else %}critical{% endif %}">
+                  <span
+                    class="badge badge-{% if info.status == 'passed' %}info{% elif info.status == 'issues_found' %}high{% else %}critical{% endif %}">
                     {{ info.status | upper }}
                   </span>
                 </td>
@@ -233,12 +245,14 @@
       <!-- Natural language executable test cases if present -->
       {% if session.nl_execution_results %}
       <div class="card p-4 mb-4">
-        <h2 style="font-family: var(--font-serif); font-size: 1.5rem; margin-bottom: 1rem;">Natural Language Executable Test Cases</h2>
+        <h2 style="font-family: var(--font-serif); font-size: 1.5rem; margin-bottom: 1rem;">Natural Language Executable
+          Test Cases</h2>
         {% for tc in session.nl_execution_results %}
         <div class="card p-3 mb-3" style="background: var(--surface-secondary);">
           <div class="flex items-center justify-between mb-2">
             <strong>[{{ tc.id }}] {{ tc.title }}</strong>
-            <span class="badge badge-{% if tc.status == 'passed' %}info{% else %}critical{% endif %}">{{ tc.status | upper }}</span>
+            <span class="badge badge-{% if tc.status == 'passed' %}info{% else %}critical{% endif %}">{{ tc.status |
+              upper }}</span>
           </div>
           {% if tc.step_results %}
           <div class="table-wrapper">
@@ -267,8 +281,10 @@
       <div class="card p-4 mb-4">
         <div class="flex items-center justify-between mb-4">
           <div>
-            <h2 style="font-family: var(--font-serif); font-size: 1.65rem; margin-bottom: 0.2rem;">Identified Findings</h2>
-            <p class="text-muted" style="font-size: 0.88rem; margin: 0;">Click on any row to expand technical details, selectors, and reproduction steps.</p>
+            <h2 style="font-family: var(--font-serif); font-size: 1.65rem; margin-bottom: 0.2rem;">Identified Findings
+            </h2>
+            <p class="text-muted" style="font-size: 0.88rem; margin: 0;">Click on any row to expand technical details,
+              selectors, and reproduction steps.</p>
           </div>
           <div class="flex items-center gap-1">
             <button type="button" class="btn btn-ghost btn-sm issue-filter-btn active" data-filter="all">All</button>
@@ -297,15 +313,19 @@
                 <td class="text-muted">{{ f.category | replace('_', ' ') | title }}</td>
                 <td>
                   <div class="finding-title" style="font-weight: 600; cursor: pointer;">{{ f.title }}</div>
-                  <div class="finding-detail card p-3 mt-2" style="display: none; background: var(--surface-secondary); font-size: 0.88rem;">
+                  <div class="finding-detail card p-3 mt-2"
+                    style="display: none; background: var(--surface-secondary); font-size: 0.88rem;">
                     <p style="margin-top: 0;">{{ f.description }}</p>
                     {% if f.expected_behavior %}<p><strong>Expected:</strong> {{ f.expected_behavior }}</p>{% endif %}
                     {% if f.actual_behavior %}<p><strong>Actual:</strong> {{ f.actual_behavior }}</p>{% endif %}
-                    {% if f.element_selector %}<p><strong>Selector:</strong> <code>{{ f.element_selector }}</code></p>{% endif %}
-                    {% if f.steps_to_reproduce %}<p><strong>Steps:</strong> {{ f.steps_to_reproduce | join(' &rarr; ') }}</p>{% endif %}
+                    {% if f.element_selector %}<p><strong>Selector:</strong> <code>{{ f.element_selector }}</code></p>{%
+                    endif %}
+                    {% if f.steps_to_reproduce %}<p><strong>Steps:</strong> {{ f.steps_to_reproduce | join(' &rarr; ')
+                      }}</p>{% endif %}
                     {% if f.screenshot_path %}
                     <div class="mt-2">
-                      <img src="/files/{{ f.screenshot_path }}" class="finding-screenshot" alt="Finding screenshot" style="max-width: 100%; border-radius: 6px; border: 1px solid var(--border);" loading="lazy">
+                      <img src="/files/{{ f.screenshot_path }}" class="finding-screenshot" alt="Finding screenshot"
+                        style="max-width: 100%; border-radius: 6px; border: 1px solid var(--border);" loading="lazy">
                     </div>
                     {% endif %}
                   </div>
@@ -335,7 +355,7 @@
             </p>
           </div>
           {% if session.screenshots %}
-            <span class="text-muted text-mono" style="font-size: 0.82rem;">Click to enlarge</span>
+          <span class="text-muted text-mono" style="font-size: 0.82rem;">Click to enlarge</span>
           {% endif %}
         </div>
 
@@ -350,7 +370,8 @@
             </div>
             <img src="{{ shot }}" class="gallery-thumb" alt="Test evidence screenshot" loading="lazy">
             <div class="gallery-meta">
-              <span class="text-mono text-muted" style="font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              <span class="text-mono text-muted"
+                style="font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                 {{ shot.split('/')[-1] }}
               </span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -363,7 +384,8 @@
         </div>
         {% else %}
         <div class="card p-5 text-center text-muted">
-          <p style="margin: 0;">No screenshots were captured for this session (screenshots were either disabled or no errors occurred).</p>
+          <p style="margin: 0;">No screenshots were captured for this session (screenshots were either disabled or no
+            errors occurred).</p>
         </div>
         {% endif %}
       </div>
@@ -376,7 +398,8 @@
         {% if session.reports %}
         <div style="display: flex; gap: 1rem; flex-wrap: wrap;" class="mb-4">
           {% for fmt, url in session.reports.items() %}
-          <a href="{{ url }}" target="_blank" class="card p-3 flex items-center gap-3" style="text-decoration: none; color: var(--text); background: var(--surface-secondary); min-width: 160px;">
+          <a href="{{ url }}" target="_blank" class="card p-3 flex items-center gap-3"
+            style="text-decoration: none; color: var(--text); background: var(--surface-secondary); min-width: 160px;">
             <span style="font-size: 1.5rem;">
               {% if fmt == 'markdown' %}📝{% elif fmt == 'json' %}{ }/{% elif fmt == 'pdf' %}📑{% endif %}
             </span>
@@ -392,7 +415,9 @@
         {% if session.recording %}
         <div class="mt-4 pt-3 border-top" style="border-color: var(--border);">
           <h3 style="font-size: 1.1rem; margin-bottom: 0.75rem;">Session Video Recording</h3>
-          <video controls style="width: 100%; max-width: 640px; border-radius: var(--radius-md); border: 1px solid var(--border);" preload="metadata">
+          <video controls
+            style="width: 100%; max-width: 640px; border-radius: var(--radius-md); border: 1px solid var(--border);"
+            preload="metadata">
             <source src="{{ session.recording }}">
             Your browser does not support video playback.
           </video>
@@ -404,31 +429,35 @@
     <!-- Panel 5: AI Analysis -->
     <section class="report-tab-panel" id="tab-panel-ai-analysis" style="display: none;">
       <div class="card p-4 mb-4">
-        <h2 style="font-family: var(--font-serif); font-size: 1.65rem; margin-bottom: 1rem;">AI Narrative &amp; Root Causes</h2>
+        <h2 style="font-family: var(--font-serif); font-size: 1.65rem; margin-bottom: 1rem;">AI Narrative &amp; Root
+          Causes</h2>
         {% if session.summary %}
-          {% if session.summary.cross_browser_analysis %}
-          <div class="mb-4">
-            <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Cross-Browser Comparative Analysis</h3>
-            <p class="text-muted" style="line-height: 1.6;">{{ session.summary.cross_browser_analysis }}</p>
-          </div>
-          {% endif %}
+        {% if session.summary.cross_browser_analysis %}
+        <div class="mb-4">
+          <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Cross-Browser Comparative Analysis</h3>
+          <p class="text-muted" style="line-height: 1.6;">{{ session.summary.cross_browser_analysis }}</p>
+        </div>
+        {% endif %}
 
-          {% if session.summary.root_cause_clusters %}
-          <div class="mb-4">
-            <h3 style="font-size: 1.1rem; margin-bottom: 0.75rem;">Root Cause Clusters</h3>
-            <div style="display: grid; gap: 0.85rem;">
-              {% for cluster in session.summary.root_cause_clusters %}
-              <div class="card p-3" style="background: var(--surface-secondary);">
-                <div style="font-weight: 600; margin-bottom: 0.35rem;">{{ cluster.label }}</div>
-                <div style="font-size: 0.88rem; margin-bottom: 0.25rem;"><strong>Root Cause:</strong> {{ cluster.root_cause }}</div>
-                <div style="font-size: 0.88rem; color: #2E7D32;"><strong>Suggested Fix:</strong> {{ cluster.suggested_fix }}</div>
-              </div>
-              {% endfor %}
+        {% if session.summary.root_cause_clusters %}
+        <div class="mb-4">
+          <h3 style="font-size: 1.1rem; margin-bottom: 0.75rem;">Root Cause Clusters</h3>
+          <div style="display: grid; gap: 0.85rem;">
+            {% for cluster in session.summary.root_cause_clusters %}
+            <div class="card p-3" style="background: var(--surface-secondary);">
+              <div style="font-weight: 600; margin-bottom: 0.35rem;">{{ cluster.label }}</div>
+              <div style="font-size: 0.88rem; margin-bottom: 0.25rem;"><strong>Root Cause:</strong> {{
+                cluster.root_cause }}</div>
+              <div style="font-size: 0.88rem; color: #2E7D32;"><strong>Suggested Fix:</strong> {{ cluster.suggested_fix
+                }}</div>
             </div>
+            {% endfor %}
           </div>
-          {% endif %}
+        </div>
+        {% endif %}
         {% else %}
-          <p class="text-muted">No deep AI analysis generated yet. Click "Deep Analysis" in the top summary card to run analysis with OmniKey AI.</p>
+        <p class="text-muted">No deep AI analysis generated yet. Click "Deep Analysis" in the top summary card to run
+          analysis with OmniKey AI.</p>
         {% endif %}
       </div>
     </section>
@@ -436,20 +465,21 @@
     <!-- Panel 6: Recommendations -->
     <section class="report-tab-panel" id="tab-panel-recommendations" style="display: none;">
       <div class="card p-4 mb-4">
-        <h2 style="font-family: var(--font-serif); font-size: 1.65rem; margin-bottom: 1rem;">Prioritized Remediation Plan</h2>
+        <h2 style="font-family: var(--font-serif); font-size: 1.65rem; margin-bottom: 1rem;">Prioritized Remediation
+          Plan</h2>
         {% if session.summary and session.summary.priority_recommendations %}
-          <ol style="padding-left: 1.5rem; line-height: 1.8; font-size: 0.95rem;">
-            {% for rec in session.summary.priority_recommendations %}
-            <li>{{ rec }}</li>
-            {% endfor %}
-          </ol>
+        <ol style="padding-left: 1.5rem; line-height: 1.8; font-size: 0.95rem;">
+          {% for rec in session.summary.priority_recommendations %}
+          <li>{{ rec }}</li>
+          {% endfor %}
+        </ol>
         {% else %}
-          <ul style="padding-left: 1.25rem; line-height: 1.8; font-size: 0.92rem; color: var(--text-muted);">
-            <li>Address any Critical or High severity accessibility contrast and heading violations.</li>
-            <li>Ensure all interactive buttons meet the WCAG 44x44px minimum target touch requirement.</li>
-            <li>Verify client-side form validation feedback is accessible to screen readers using ARIA live regions.</li>
-            <li>Fix broken links and 404 image resource references flagged in console errors.</li>
-          </ul>
+        <ul style="padding-left: 1.25rem; line-height: 1.8; font-size: 0.92rem; color: var(--text-muted);">
+          <li>Address any Critical or High severity accessibility contrast and heading violations.</li>
+          <li>Ensure all interactive buttons meet the WCAG 44x44px minimum target touch requirement.</li>
+          <li>Verify client-side form validation feedback is accessible to screen readers using ARIA live regions.</li>
+          <li>Fix broken links and 404 image resource references flagged in console errors.</li>
+        </ul>
         {% endif %}
       </div>
     </section>
