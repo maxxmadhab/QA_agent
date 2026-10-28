@@ -1,915 +1,695 @@
-# QA Agent 🤖⚡
+# 🔍 QA Agent
 
-> **Autonomous, Agentic Exploratory QA & DevOps Testing for Modern Web Applications**  
-> *Powered by Playwright and AI (Anthropic Claude / OpenAI GPT-4o)*
+> **Automated exploratory testing powered by AI — with a beautiful Web UI and a full-featured CLI.**
 
-[![Tests](https://github.com/billrichards/qa-agent/actions/workflows/test.yml/badge.svg)](https://github.com/billrichards/qa-agent/actions/workflows/test.yml)
-[![PyPI version](https://img.shields.io/pypi/v/qa-agent)](https://pypi.org/project/qa-agent/)
 [![Python versions](https://img.shields.io/pypi/pyversions/qa-agent)](https://pypi.org/project/qa-agent/)
 [![License](https://img.shields.io/github/license/billrichards/qa-agent)](LICENSE)
-[![Coverage](https://img.shields.io/badge/coverage-70%25%2B-brightgreen)](pyproject.toml)
+
+QA Agent is an autonomous web-testing platform that simulates real user interactions, audits for accessibility and WCAG compliance, detects console and network errors, and produces executive-quality AI reports — all without writing a single test script.
 
 ---
 
-## 📌 Executive Overview
+## 📋 Table of Contents
 
-**QA Agent** is an end-to-end autonomous QA testing platform and CLI engine that simulates real human interaction, performs automated link crawling, executes comprehensive quality/accessibility audits, and generates actionable reports with zero manual test script maintenance.
-
-When provided with plain-English instructions (e.g. bug reports, user stories, or feature specs), **QA Agent** leverages **LLM Agentic Planning** (via Anthropic Claude or OpenAI GPT-4o) to dynamically generate custom Playwright interaction steps and assertions on the fly.
-
-Beyond standard UI testing, QA Agent includes a suite of **DevOps, API, Security, Container, and Performance testing engines** (Postman/Newman, OWASP ZAP, Docker security, Locust load testing), making it a complete software quality assurance agent for CI/CD pipelines.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/billrichards/qa-agent/main/docs/console-output-showing-a-test-run-in-progress.png" alt="QA Agent Console Output" width="800">
-</p>
-
----
-
-## 📖 Table of Contents
-
-- [Core Capabilities](#-core-capabilities)
-- [System Architecture](#-system-architecture)
-  - [High-Level Architectural Diagram](#high-level-architectural-diagram)
-  - [Module & Directory Map](#module--directory-map)
-  - [Core Subsystems](#core-subsystems)
-- [End-to-End Execution Workflow](#-end-to-end-execution-workflow)
-  - [Sequence Workflow Diagram](#sequence-workflow-diagram)
-  - [Detailed Execution Stages](#detailed-execution-stages)
-- [Installation & Setup](#-installation--setup)
+- [Features](#-features)
 - [Quick Start](#-quick-start)
-- [Usage Guide & CLI Flags](#-usage-guide--cli-flags)
-  - [Testing Modes](#1-testing-modes)
-  - [Agentic Natural-Language Testing](#2-agentic-natural-language-testing)
-  - [Concurrency & Host Throttling](#3-concurrency--host-throttling)
-  - [Batch Execution](#4-batch-execution)
-  - [Authentication Setup](#5-authentication-setup)
-- [Test Suite Catalog](#-test-suite-catalog)
-  - [Core UI/UX Suites](#a-core-uiux-suites)
-  - [DevOps & API Testing Suites](#b-devops--api-testing-suites)
-  - [Security & Infrastructure Suites](#c-security--infrastructure-suites)
-  - [Performance & Load Testing Suite](#d-performance--load-testing-suite)
-- [Web Interface & REST API](#-web-interface--rest-api)
-  - [Web Dashboard Features](#web-dashboard-features)
-  - [REST API Endpoints](#rest-api-endpoints)
-- [Programmatic Python API](#-programmatic-python-api)
-- [Deduplication & Narrative AI Summaries](#-deduplication--narrative-ai-summaries)
-- [Extending QA Agent (Custom Testers)](#-extending-qa-agent-custom-testers)
-- [CI/CD Pipeline Integration](#-cicd-pipeline-integration)
-- [Exit Codes & Failure Thresholds](#-exit-codes--failure-thresholds)
-- [Troubleshooting & FAQs](#-troubleshooting--faqs)
-- [License & Contributing](#-license--contributing)
+- [Web UI](#-web-ui)
+  - [Non-Developer (Quick Test) Mode](#non-developer-quick-test-mode)
+  - [Developer Studio Mode](#developer-studio-mode)
+  - [Live Execution Console](#live-execution-console)
+  - [Session Results](#session-results)
+  - [AI Analysis & PDF Export](#ai-analysis--pdf-export)
+- [CLI Usage](#-cli-usage)
+- [Architecture](#-architecture)
+- [AI Integration](#-ai-integration)
+- [Environment Variables](#-environment-variables)
+- [Test Suites](#-test-suites)
+- [Output Formats](#-output-formats)
+- [Extending QA Agent](#-extending-qa-agent)
+- [CI/CD Integration](#-cicd-integration)
+- [Troubleshooting](#-troubleshooting)
+- [License](#-license)
 
 ---
 
-## 🌟 Core Capabilities
+## ✨ Features
 
-| Capability | Overview |
+| Capability | Details |
 |---|---|
-| 🤖 **Agentic AI Testing** | Pass natural language bug reports or requirements; AI plans & executes targeted Playwright steps |
-| 🕸️ **Exploratory Crawling** | Autonomous single-page (`focused`) testing or full-site dynamic discovery (`explore` mode) |
-| ♿ **Accessibility & WCAG** | Automatic ARIA, contrast, focus-state, keyboard trap checking + opt-in WCAG 2.1 AA compliance audit |
-| ⚡ **Concurrent Worker Pool** | Parallel multi-browser worker pool with per-host token-bucket rate limiting |
-| 🔌 **DevOps & API Verification** | Integrated REST API runner, Postman/Newman collection runner, static code quality, & security header audits |
-| 🐳 **Docker & Web Security** | Container security scanner, Dockerfile validator, and OWASP ZAP web vulnerability integration |
-| 🚀 **Locust Performance Testing** | Concurrent load simulation tracking p95 response latencies, error rates, and user scaling |
-| 📊 **Multi-Format Reporting** | Colorized Console tables, detailed Markdown with screenshots, structured JSON, and PDF reports |
-| 🖥️ **Web UI & Real-Time SSE** | Flask web interface with live streaming console logs (Server-Sent Events) and past session browser |
+| **Web UI** | Beautiful browser-based interface — no CLI knowledge needed |
+| **Quick Test Wizard** | Plain-English test instructions for non-developers |
+| **Developer Studio** | Full multi-step configuration form with every option exposed |
+| **Live Execution Console** | Real-time streaming log with test steps, findings, and progress |
+| **AI-Powered Planning** | OmniKey (primary), Anthropic Claude, or OpenAI GPT-4o generate custom test steps |
+| **AI Executive Report** | Post-run analysis: summary, prioritized remediation plan, root-cause clusters |
+| **PDF Export** | One-click browser-native PDF of the AI report (no additional installs needed) |
+| **Session History** | Browse, filter, and revisit every past test run |
+| **7 Test Suites** | Keyboard, Mouse, Forms, Accessibility, WCAG, Console/Network Errors, Custom AI |
+| **Headless & headed** | Run silently in CI or watch tests execute in a real browser |
+| **CLI** | Full-featured command-line interface for automation and scripting |
 
 ---
 
-## 🏗 System Architecture
+## 🚀 Quick Start
 
-QA Agent follows a decoupled, modular architecture structured around an orchestration agent (`QAAgent`), an AI planning subsystem, a concurrent page crawling engine, and a pluggable matrix of test execution suites and reporters.
+### 1 — Install
 
-### High-Level Architectural Diagram
+```bash
+# Core install (CLI + Web UI)
+pip install -e .
 
-```mermaid
-graph TD
-    subgraph Ingestion & Interface
-        CLI["CLI Entry Point (cli.py / __main__.py)"]
-        WEB["Flask Web Server & SSE (web/server.py)"]
-        CONF["Config Dataclass (config.py)"]
-    end
+# Install Playwright browser
+playwright install chromium
+```
 
-    subgraph AI Subsystem
-        LLM["LLM Client (llm_client.py - stdlib urllib)"]
-        AIP["AI Planner (ai_planner.py)"]
-        CACHE["Plan Cache (plan_cache.py - SHA256 / 24h TTL)"]
-        SUMM["AI Narrative Summarizer (summarizer.py)"]
-    end
+### 2 — Set your AI key
 
-    subgraph Core Orchestration Engine
-        AGENT["QA Agent Orchestrator (agent.py)"]
-        FRONTIER["Thread-Safe Frontier Queue (concurrency.py)"]
-        RATELIM["Host Rate Limiter (rate_limiter.py)"]
-        BATCH["Batch Runner (batch.py)"]
-    end
+```bash
+# Windows PowerShell
+$env:OMNIKEY_API_KEY = "omnikey-g-..."
 
-    subgraph Browser Execution & Tester Matrix
-        PW["Playwright Browser Pool (Chromium)"]
-        KEY["KeyboardTester"]
-        MSE["MouseTester"]
-        FRM["FormTester"]
-        A11Y["Accessibility / WCAG Tester"]
-        ERR["ErrorDetector (Console / Network)"]
-        CUST["Custom AI Step Tester"]
-        DEVOPS["DevOps Testers (API, Docker, Security, Locust)"]
-    end
+# macOS / Linux
+export OMNIKEY_API_KEY="omnikey-g-..."
+```
 
-    subgraph Reporting & Artifacts
-        DEDUP["Deduplication & URL Normalizer ({id})"]
-        CONSOLE["ConsoleReporter"]
-        MD["MarkdownReporter"]
-        JSON["JSONReporter"]
-        PDF["PDFReporter (WeasyPrint)"]
-    end
+### 3 — Run
 
-    CLI --> CONF
-    WEB --> CONF
-    CONF --> AGENT
-    BATCH --> AGENT
+**Web UI (recommended)**
+```bash
+python -m qa_agent.web.server
+# Open http://localhost:5000
+```
 
-    AGENT -->|Instructions provided| AIP
-    AIP <--> CACHE
-    AIP --> LLM
-
-    AGENT --> FRONTIER
-    FRONTIER --> RATELIM
-    RATELIM --> PW
-
-    PW --> KEY
-    PW --> MSE
-    PW --> FRM
-    PW --> A11Y
-    PW --> ERR
-    PW --> CUST
-    AGENT --> DEVOPS
-
-    KEY & MSE & FRM & A11Y & ERR & CUST & DEVOPS -->|Raw Findings| DEDUP
-    DEDUP -->|Deduplicated TestSession| SUMM
-    SUMM -->|Enhanced TestSession| CONSOLE & MD & JSON & PDF
+**CLI**
+```bash
+python -m qa_agent https://example.com
 ```
 
 ---
 
-### Module & Directory Map
+## 🌐 Web UI
+
+Launch the web server and open `http://localhost:5000` in your browser.
+
+```bash
+python -m qa_agent.web.server
+```
+
+The UI has four main sections accessible from the top navigation:
+
+| Page | Purpose |
+|---|---|
+| **Quick test** | Non-developer wizard — describe what to test in plain English |
+| **Studio** | Full developer configuration form |
+| **Sessions** | Browse all past test runs |
+| *(Run page)* | Live execution console — shown automatically when a test starts |
+
+---
+
+### Non-Developer (Quick Test) Mode
+
+The **Quick Test** page (`/quick-test`) provides a simplified wizard for users who aren't comfortable with CLI commands or configuration files.
+
+1. Enter the URL(s) to test
+2. Optionally describe what you want to test in plain English (e.g. *"Check that the login form works and checkout doesn't break"*)
+3. Click **Run Test**
+
+QA Agent uses the OmniKey AI provider to translate your instructions into concrete Playwright interactions automatically.
+
+---
+
+### Developer Studio Mode
+
+The **Studio** page (`/studio`) exposes the full configuration across 6 wizard steps:
+
+| Step | Settings |
+|---|---|
+| **Basic Config** | URLs to test, test mode (Focused / Explore), output formats, output directory |
+| **Test Categories** | Enable/disable individual test suites |
+| **Browser Settings** | Target browsers, viewport, timeout, parallel workers, screenshots, video recording, headless mode |
+| **Authentication** | Login URL, username/password credentials, cookie injection |
+| **Advanced Settings** | AI instructions (plain English), LLM provider selection, model, ignore URL patterns, plan caching |
+| **Review & Run** | Summary of all settings before launching |
+
+**Test Modes:**
+
+- **Focused** — Tests only the URLs you specify
+- **Explore** — Crawls links from the starting URL(s) up to a configurable depth and page count
+
+---
+
+### Live Execution Console
+
+Once a test starts, the **Run page** (`/run/<job_id>`) shows a full-width live terminal that streams:
+
+- 🟠 Current test step being executed (keyboard / mouse / forms / etc.)
+- 🔴 Findings as they are discovered (with severity badges)
+- 📸 Screenshot captures (noted in the log)
+- 📊 Progress percentage and live metrics (pages tested, findings count, elapsed time)
+- ✅ Completion — automatically navigates to the Session Results page
+
+A **Stop Test** button is available to cancel at any time.
+
+---
+
+### Session Results
+
+After a test completes, the **Session page** (`/session/<domain>/<session_id>`) shows:
+
+- Summary stats: pages tested, issues found, passed tests, suggestions
+- Full findings table with severity, category, description, and URL
+- Screenshots gallery
+- **AI Summary** — auto-generated executive paragraph
+- **Download PDF** button → opens the dedicated AI report
+- **AI Analysis** — trigger on-demand deep analysis with prioritized remediation
+
+**Sessions List** (`/sessions`) — browse all past runs:
+
+- Grouped by domain
+- Each session shown as an individual card with date, duration, and finding counts
+- Filter bar to search by domain or URL
+- **+ New Test** button (top-right) to start a fresh run
+
+---
+
+### AI Analysis & PDF Export
+
+Clicking **Download PDF** on a session page:
+
+1. If an AI analysis hasn't been generated yet → triggers the analysis automatically (with a spinner)
+2. Opens the dedicated AI Report page (`/session/<domain>/<session_id>/ai-report`)
+3. Triggers the browser's native **Print → Save as PDF** dialog
+
+The AI Report contains **only**:
+
+- 📄 Executive Summary
+- 🗂️ Prioritized Remediation Plan
+- 🔗 Root-Cause Clusters
+- 🌐 Cross-Browser Analysis
+
+> **Note:** This uses the browser's built-in PDF export — no WeasyPrint or system dependencies required.
+
+---
+
+## 💻 CLI Usage
+
+```bash
+python -m qa_agent [OPTIONS] URL [URL...]
+```
+
+### Common Examples
+
+```bash
+# Basic test
+python -m qa_agent https://example.com
+
+# Explore mode — crawl up to 10 pages
+python -m qa_agent --mode explore --max-pages 10 https://example.com
+
+# With AI instructions (plain English)
+python -m qa_agent --instructions "Verify the search bar returns results and the cart works" https://example.com
+
+# Multiple output formats
+python -m qa_agent --output console,json,markdown https://example.com
+
+# With screenshots
+python -m qa_agent --screenshots https://example.com
+
+# Headless off (watch the browser)
+python -m qa_agent --no-headless https://example.com
+
+# Authenticated session
+python -m qa_agent --auth-url https://example.com/login --username user@example.com --password secret https://example.com/dashboard
+```
+
+### Full CLI Reference
+
+| Flag | Default | Description |
+|---|---|---|
+| `--mode` | `focused` | `focused` (test given URLs) or `explore` (crawl links) |
+| `--max-pages` | `100` | Max pages to test in explore mode |
+| `--max-depth` | `3` | Link crawl depth |
+| `--output` | `console,markdown` | Output formats: `console`, `markdown`, `json`, `pdf` |
+| `--output-dir` | `./qa-agent-output` | Directory for report files |
+| `--screenshots` | off | Enable screenshot capture |
+| `--screenshot-on-error` | on | Capture screenshot on finding |
+| `--record-video` | off | Record WebM video of test execution |
+| `--headless` / `--no-headless` | headless | Run browser in background or visible |
+| `--viewport` | `1280x720` | Browser viewport (`WxH`) |
+| `--timeout` | `30000` | Page timeout in milliseconds |
+| `--workers` | `1` | Parallel page workers |
+| `--instructions` | — | Plain-English AI test instructions |
+| `--llm-provider` | `omnikey` | AI provider: `omnikey`, `anthropic`, `openai` |
+| `--model` | provider default | Override model name |
+| `--auth-url` | — | Login page URL |
+| `--username` | — | Login username |
+| `--password` | — | Login password |
+| `--ignore` | — | URL patterns to skip (regex/glob, repeatable) |
+| `--no-cache` | off | Disable AI test plan caching |
+| `--test-keyboard` / `--no-test-keyboard` | on | Enable/disable keyboard navigation tests |
+| `--test-mouse` / `--no-test-mouse` | on | Enable/disable mouse interaction tests |
+| `--test-forms` / `--no-test-forms` | on | Enable/disable form tests |
+| `--test-accessibility` / `--no-test-accessibility` | on | Enable/disable accessibility tests |
+| `--test-wcag` / `--no-test-wcag` | on | Enable/disable WCAG compliance tests |
+| `--test-errors` / `--no-test-errors` | on | Enable/disable console/network error tests |
+
+---
+
+## 🏗️ Architecture
+
+### Directory Structure
 
 ```
 qa_agent/
-├── __init__.py               # Package metadata and public exports
-├── __main__.py               # Executable module entry point (python -m qa_agent)
-├── cli.py                    # Argument parsing, CLI flag routing, batch handler
-├── agent.py                  # Core QAAgent orchestrator class
-├── config.py                 # Configuration dataclasses (TestConfig, AuthConfig, etc.)
-├── models.py                 # Data models (Finding, PageAnalysis, TestSession, TestPlan)
-├── llm_client.py             # Stdlib urllib HTTP client for Anthropic & OpenAI
-├── ai_planner.py             # Prompt builder & structured JSON response parser
-├── plan_cache.py             # Disk-backed JSON plan cache with SHA-256 keys & TTL
-├── summarizer.py             # Post-run narrative analysis, root cause clustering engine
-├── batch.py                  # Concurrent multi-config BatchRunner pool
-├── concurrency.py            # Thread-safe Frontier queue & PageIndexer
-├── rate_limiter.py           # Per-host token-bucket navigation rate limiter
-├── playwright_utils.py       # Helper functions for Playwright page handling
-├── testers/                  # Modular test suite implementations
-│   ├── base.py               # BaseTester abstract class definition
-│   ├── keyboard.py           # Keyboard navigation, focus indicators, skip links
-│   ├── mouse.py              # Mouse interaction, hover effects, link validation
-│   ├── forms.py              # Form detection, input fuzzing, HTML5 validation
-│   ├── accessibility.py      # Core WCAG checks (ARIA, alt text, contrast)
-│   ├── wcag_compliance.py    # Opt-in full WCAG 2.1 AA auditing engine
-│   ├── errors.py             # Console error logger & network failure trap
-│   ├── custom.py             # AI-generated custom step action/assertion executor
-│   ├── api_tester.py         # REST API status & payload tester
-│   ├── newman_tester.py      # Postman collection runner via Newman CLI
-│   ├── code_quality.py       # Code linting & formatting checks
-│   ├── security_checks.py    # Security header & SSL validation
-│   ├── project_health.py     # Repository structure & dependency checks
-│   ├── docker_tester.py      # Docker container configuration auditor
-│   ├── container_security.py # Container security & vulnerability scanner
-│   ├── zap_tester.py         # OWASP ZAP security scanner integration
-│   └── performance_tester.py # Locust performance & load testing engine
-├── reporters/                # Multi-format report generators
-│   ├── base.py               # BaseReporter interface
-│   ├── console.py            # Terminal reporter with rich tabular output
-│   ├── markdown.py           # Markdown reporter with embedded screenshot links
-│   ├── json_reporter.py      # Machine-readable JSON output generator
-│   └── pdf.py                # WeasyPrint PDF report renderer
-└── web/                      # Web interface & REST API
-    ├── server.py             # Flask application server & SSE event streamer
-    ├── static/               # CSS stylesheets & frontend JS scripts
-    └── templates/            # Jinja2 HTML templates for web dashboard
+├── __init__.py              # Package init, version (0.3.0)
+├── __main__.py              # Module entry point: python -m qa_agent
+├── cli.py                   # Full CLI argument parsing (argparse)
+├── agent.py                 # Core QA orchestrator — runs all test suites, manages pages
+├── ai_planner.py            # LLM-powered test plan generation
+├── config.py                # TestConfig, ScreenshotConfig, RecordingConfig, AuthConfig
+├── llm_client.py            # OmniKeyClient, AnthropicClient, OpenAIClient (stdlib urllib)
+├── models.py                # Finding, PageAnalysis, TestSession, SummaryResult, TestPlan
+├── plan_cache.py            # Filesystem cache for AI test plans (avoid redundant API calls)
+├── env_loader.py            # Loads .env file automatically on startup
+├── report_analyzer.py       # Post-run AI analysis → executive reports
+├── testers/
+│   ├── base.py              # BaseTester + _take_screenshot (emits [SCREENSHOT] for SSE)
+│   ├── keyboard.py          # TAB nav, arrow keys, Enter, Escape, focus traps
+│   ├── mouse.py             # Click targets, hover, double-click, right-click, 44px WCAG
+│   ├── forms.py             # Required fields, validation, labels, HTML5 types, autocomplete
+│   ├── accessibility.py     # Alt text, headings, links, contrast, ARIA, landmarks, skip nav
+│   ├── wcag_compliance.py   # Extended WCAG 2.1 AA checks
+│   ├── custom.py            # AI-generated custom step executor
+│   └── errors.py            # Console errors, network 4xx/5xx, JS exceptions, broken images
+├── reporters/
+│   ├── base.py              # BaseReporter interface
+│   ├── console.py           # Real-time colored terminal output
+│   ├── markdown.py          # Full Markdown report with tables and screenshots
+│   ├── json_reporter.py     # Machine-readable JSON for CI/CD
+│   └── pdf.py               # WeasyPrint PDF (optional; falls back gracefully on Windows)
+└── web/
+    ├── server.py            # Flask app — SSE streaming, job pool, session management, AI routes
+    ├── static/
+    │   ├── app.js           # Global nav and routing
+    │   ├── index.js         # Landing page interactions
+    │   ├── quick_test.js    # Non-developer wizard (sends llm_provider: omnikey)
+    │   ├── studio.js        # Developer multi-step form (sends llm_provider: omnikey)
+    │   ├── run.js           # Live console: SSE events → log/progress/finding/screenshot/complete
+    │   ├── sessions.js      # Session list — individual domain-grouped cards
+    │   ├── session.js       # Session detail, AI analysis trigger, Download PDF flow
+    │   ├── style.css        # Full design system (warm beige/orange, spacious layout)
+    │   └── hero-preview.png # Landing page QA illustration
+    └── templates/
+        ├── base.html        # Base layout with top nav
+        ├── index.html       # Landing page with hero illustration
+        ├── quick_test.html  # Non-developer wizard
+        ├── studio.html      # Developer multi-step form
+        ├── run.html         # Full-width live execution console
+        ├── sessions.html    # Session cards list with filter + New Test button
+        ├── session.html     # Session detail: findings, screenshots, AI summary
+        └── ai_report.html   # A4-ready AI executive report (PDF export target)
 ```
 
----
-
-### Core Subsystems
-
-#### 1. AI Test Planner (`ai_planner.py` & `llm_client.py`)
-- **Zero Heavy Dependencies**: Implemented using Python's standard library `urllib.request`, eliminating third-party SDK lock-in.
-- **Provider Support**: Seamlessly switch between **Anthropic Claude** (`claude-sonnet-4-6`) and **OpenAI GPT** (`gpt-4o`).
-- **Structured Output Generation**: Constructs strict system prompts enforcing JSON schemas containing test steps (actions: `click`, `fill`, `hover`, `press_key`, `wait`, `navigate`, `scroll`; assertions: `visible`, `hidden`, `text_contains`, `url_contains`, `element_count`). Includes robust fallback regex parsing for markdown-wrapped responses.
-- **Plan Caching (`plan_cache.py`)**: Hashes the target URL and instructions into a SHA-256 digest. Caches responses locally in `~/.qa_agent/cache/` for 24 hours to prevent unnecessary API spending.
-
-#### 2. Concurrency & Rate Limiting (`concurrency.py` & `rate_limiter.py`)
-- **Frontier Queue**: Thread-safe URL discovery queue utilizing `threading.Lock` and atomic sets to manage multi-worker crawling without race conditions or duplicate page visits.
-- **Host Rate Limiter**: Implements a token-bucket rate limiter (`HostRateLimiter`) capping `page.goto()` calls per hostname (default `3.0 req/sec`, max `50.0 req/sec`). Prevents accidental Denial-of-Service (DoS) on staging or dev servers during multi-worker runs.
-
-#### 3. Deduplication & Root Cause Clustering (`models.py` & `summarizer.py`)
-- **URL Normalization (`_normalize_url`)**: Applies regex patterns to replace dynamic path components (UUIDs, numeric IDs, slug strings) with a unified `{id}` placeholder.
-- **Finding Consolidation**: Merges findings sharing identical `(title, category, severity, normalized_url)`. Stores all distinct occurrence URLs under `affected_urls`, eliminating report bloat.
-- **Root Cause Analysis**: Optional post-run AI step synthesizes raw findings into executive summaries, priority recommendations, and root-cause clusters.
-
----
-
-## 🔄 End-to-End Execution Workflow
-
-### Sequence Workflow Diagram
+### Data Flow
 
 ```mermaid
-sequenceDiagram
-    autonumber
-    actor User
-    participant CLI as CLI / Web UI
-    participant Agent as QAAgent Orchestrator
-    participant Planner as AI Planner
-    participant Cache as Disk Plan Cache
-    participant LLM as Anthropic / OpenAI API
-    participant PW as Playwright Browser
-    participant Testers as Tester Matrix
-    participant Summary as AI Summarizer
-    participant Report as Output Reporters
-
-    User->>CLI: Launch qa-agent [URL] --instructions "..."
-    CLI->>Agent: Initialize with TestConfig
-    
-    alt Instructions Provided
-        Agent->>Planner: Request Test Plan
-        Planner->>Cache: Lookup SHA256 key
-        alt Cache Miss
-            Planner->>LLM: Send system prompt + instructions
-            LLM-->>Planner: Return JSON test plan
-            Planner->>Cache: Store plan (24h TTL)
-        else Cache Hit
-            Cache-->>Planner: Return cached TestPlan
-        end
-        Planner-->>Agent: Hand over TestPlan
-    end
-
-    Agent->>PW: Launch Browser & Context (workers=N)
-    
-    loop Exploration / Target URLs
-        Agent->>PW: Navigate page (Throttled by HostRateLimiter)
-        PW-->>Agent: Page DOM Loaded
-        
-        par Execute Enabled Testers
-            Agent->>Testers: KeyboardTester.run()
-            Agent->>Testers: MouseTester.run()
-            Agent->>Testers: FormTester.run()
-            Agent->>Testers: AccessibilityTester.run()
-            Agent->>Testers: ErrorDetector.run()
-            Agent->>Testers: CustomTester.run() (AI Steps)
-        end
-        
-        Testers-->>Agent: Return Findings & Discovered Links
-        Agent->>Agent: Enqueue new links into Frontier
-    end
-
-    Agent->>Agent: Deduplicate Findings via _normalize_url()
-    
-    opt Generate Summary Enabled
-        Agent->>Summary: Generate Narrative Analysis
-        Summary->>LLM: Send aggregated findings
-        LLM-->>Summary: Return Root Cause Clusters & Exec Summary
-    end
-
-    Agent->>Report: Write Console, Markdown, JSON, PDF
-    Report-->>User: Display Summary & Publish Artifacts
+flowchart TD
+    A["User (Web UI or CLI)"] --> B{Mode}
+    B -->|Quick Test| C["quick_test.js → POST /api/run"]
+    B -->|Studio| D["studio.js → POST /api/run"]
+    B -->|CLI| E["cli.py → agent.py"]
+    C --> F["server.py — job pool"]
+    D --> F
+    F --> G["agent.py\n(orchestrator)"]
+    E --> G
+    G --> H["ai_planner.py\n(OmniKey / Anthropic / OpenAI)"]
+    G --> I["testers/\n(keyboard, mouse, forms,\naccessibility, wcag, errors, custom)"]
+    H --> I
+    I --> J["Playwright browser\n(Chromium / Firefox / WebKit)"]
+    J --> K["Finding results"]
+    K --> L["reporters/\n(console, markdown, json, pdf)"]
+    K --> M["server.py SSE stream → run.js\n(live console)"]
+    M --> N["Session Results page"]
+    N --> O["report_analyzer.py\n(AI executive analysis)"]
+    O --> P["ai_report.html\n(PDF export via browser print)"]
 ```
 
 ---
 
-### Detailed Execution Stages
+## 🤖 AI Integration
 
-1. **Initialization & Config Parsing**:
-   - The CLI parser (`cli.py`) processes user arguments or batch specs, constructing a validated `TestConfig` dataclass instance.
-   - Session directory paths are created under `output/<domain>/<session_id>/qa_reports|screenshots|recordings`.
+QA Agent supports three LLM providers. **OmniKey is the primary default.**
 
-2. **AI Test Plan Generation**:
-   - If `--instructions` or `--instructions-file` is passed, `QAAgent` queries `AIPlanner`.
-   - The planner checks the local filesystem cache (`plan_cache.py`). On cache miss, it calls Anthropic or OpenAI API via `LLMClient` to convert natural language into Playwright action/assertion chains.
+### Providers
 
-3. **Browser Lifecycle Setup**:
-   - Playwright launches a Chromium browser context in headless or headed mode.
-   - Cookies, HTTP Bearer tokens, or custom headers are injected into the browser context.
+| Provider | Env Var | Default Model | Notes |
+|---|---|---|---|
+| **OmniKey** *(primary)* | `OMNIKEY_API_KEY` | `google/gemma-4-26b-it` | Default for all Web UI and CLI tests |
+| Anthropic Claude | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` | Auto-fallback to OmniKey if key absent |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o` | Optional |
 
-4. **Frontier Navigation & Rate Limiting**:
-   - In `focused` mode, the agent navigates only to specified URLs.
-   - In `explore` mode, the agent discovers internal hyperlinks, checks them against `ignore_patterns` and `same_domain_only` rules, and feeds them into the thread-safe `Frontier`.
-   - All `page.goto()` calls pass through `HostRateLimiter` to honor per-host throttling limits.
+### Auto-Fallback
 
-5. **Modular Tester Suite Execution**:
-   - For every loaded page, enabled testers in `qa_agent/testers/` execute concurrently against the Playwright `Page` object.
-   - Any runtime exceptions, HTTP 4xx/5xx network failures, ARIA violations, or unmet custom AI assertions are recorded as `Finding` objects with attached screenshot evidence.
+If Anthropic is selected as the provider but `ANTHROPIC_API_KEY` is not set, and `OMNIKEY_API_KEY` **is** set, QA Agent silently switches to OmniKey. No error is shown to the user.
 
-6. **Deduplication & Aggregation**:
-   - `TestSession.get_deduplicated_findings()` groups identical findings across dynamic route paths using URL normalization patterns.
+This applies in:
+- `agent.py → _generate_test_plan()`
+- `server.py → api_analyze_session()`
+- `server.py → session_ai_report_view()`
 
-7. **Reporting & Summary Generation**:
-   - Active reporters consume the `TestSession` and produce console summary tables, Markdown reports, JSON data files, and PDF documents.
+### What AI Does
 
----
+1. **Test Plan Generation** — translates plain-English instructions into Playwright interaction steps (click, fill, assert, navigate)
+2. **Custom Step Execution** — `testers/custom.py` runs AI-generated steps on each page
+3. **Post-Run Analysis** — `report_analyzer.py` sends findings to the LLM and receives:
+   - Executive summary paragraph
+   - Prioritized remediation plan (ordered by impact)
+   - Root-cause clusters (groups related issues)
+   - Cross-browser analysis
 
-## 💻 Installation & Setup
+### Plan Caching
 
-### Prerequisites
-- **Python**: Version `3.10` or higher required.
-- **OS**: Windows, macOS, or Linux.
-
-### Installation Options
-
-```bash
-# Standard installation (Playwright browser automation included)
-pip install qa-agent
-
-# Install optional feature extras
-pip install "qa-agent[pdf]"     # Enables PDF report generation (WeasyPrint)
-pip install "qa-agent[web]"     # Enables Web UI & REST API server (Flask)
-pip install "qa-agent[all]"     # Installs all optional dependencies
-```
-
-### Install Playwright Browsers
-Chromium is downloaded automatically on the first run. If manual installation is required:
-
-```bash
-playwright install chromium
-```
-
-### Environment Variable Setup
-Agentic testing and post-run narrative summaries require an API key for Anthropic or OpenAI:
-
-```bash
-# For Anthropic Claude (Default Provider)
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# For OpenAI GPT-4o
-export OPENAI_API_KEY="sk-..."
-
-# Optional: Web UI server configuration
-export QA_AGENT_JOB_POOL_SIZE=4
-export QA_AGENT_RATE_LIMIT=3.0
-```
+AI test plans are cached on disk (`plan_cache.py`) so repeated runs on unchanged pages skip the API call. Disable with `--no-cache`.
 
 ---
 
-## ⚡ Quick Start
+## 🔐 Environment Variables
 
-```bash
-# 1. Test a single web page (Console & Markdown report)
-qa-agent https://example.com
+Create a `.env` file in the project root (loaded automatically):
 
-# 2. Test multiple pages
-qa-agent https://example.com https://example.com/about https://example.com/contact
+```dotenv
+# Primary AI provider (required for AI features)
+OMNIKEY_API_KEY=omnikey-g-your-key-here
+OMNIKEY_BASE_URL=https://api.omnikey.ai/v1
+OMNIKEY_MODEL=google/gemma-4-26b-it
+OMNIKEY_TIMEOUT_SECONDS=60
 
-# 3. Explore & crawl an entire application (up to 3 levels deep, max 25 pages)
-qa-agent --mode explore --max-depth 3 --max-pages 25 https://example.com
+# Optional: Anthropic Claude (auto-fallback to OmniKey if absent)
+ANTHROPIC_API_KEY=sk-ant-...
 
-# 4. Agentic AI testing from a bug description
-qa-agent --instructions "Verify that clicking 'Forgot Password' sends a reset link." https://example.com/login
-
-# 5. Launch the Web UI Dashboard
-qa-agent-web --port 5000
+# Optional: OpenAI
+OPENAI_API_KEY=sk-...
 ```
 
----
-
-## 🎛 Usage Guide & CLI Flags
-
-### 1. Testing Modes
-
-- **Focused Mode (`--mode focused`)** *(Default)*: Only tests the explicit URLs provided on the command line.
-- **Explore Mode (`--mode explore`)**: Autonomous crawler that extracts internal hyperlinks, constructs a site map graph, and tests newly discovered pages up to `--max-depth` and `--max-pages`.
-
-```bash
-qa-agent --mode explore --max-depth 2 --max-pages 50 --allow-external https://example.com
-```
-
-### 2. Agentic Natural-Language Testing
-
-Direct the QA Agent using natural language instructions. The AI planner generates custom Playwright steps that execute alongside standard test suites.
-
-```bash
-# From command-line instruction
-qa-agent --instructions "Search for 'laptop', add the first item to cart, and proceed to checkout" https://shop.example.com
-
-# From a specification file
-qa-agent --instructions-file ./specs/checkout_flow.txt https://shop.example.com
-
-# Override default provider & model
-qa-agent --llm openai --ai-model gpt-4o-mini --instructions "Check navbar links" https://example.com
-
-# Bypass 24-hour plan disk cache
-qa-agent --no-cache --instructions "Test contact form" https://example.com
-```
-
-### 3. Concurrency & Host Throttling
-
-Scale test execution using multiple worker threads. Each worker controls an isolated browser context.
-
-```bash
-# Run 4 parallel worker threads with a 5 req/sec host rate limit
-qa-agent --workers 4 --rate-limit 5.0 --mode explore https://example.com
-```
-
-### 4. Batch Execution
-
-Execute multiple independent testing sessions concurrently from a JSON specification file using `--batch-file`.
-
-```bash
-qa-agent --batch-file test_suite.json --pool-size 4
-```
-
-*Example `test_suite.json`:*
-```json
-[
-  {
-    "urls": ["https://example.com/app"],
-    "mode": "explore",
-    "workers": 4,
-    "max_pages": 20
-  },
-  {
-    "urls": ["https://example.com/login"],
-    "instructions": "Verify error banner appears when submitting empty form"
-  }
-]
-```
-
-### 5. Authentication Setup
-
-Authenticate before testing protected application routes:
-
-```bash
-# Inline login credentials (performs automated form submission)
-qa-agent --auth "user:password@https://example.com/login" https://example.com/dashboard
-
-# Form login via auth.json configuration file
-qa-agent --auth-file auth.json https://example.com/dashboard
-
-# Inject pre-existing session cookies
-qa-agent --cookies cookies.json https://example.com/dashboard
-
-# Inject custom HTTP headers (e.g. Bearer token)
-qa-agent --header "Authorization: Bearer eyJhbGci..." https://example.com/api
-```
-
-*Example `auth.json`:*
-```json
-{
-  "username": "test_admin",
-  "password": "SecretPassword123!",
-  "auth_url": "https://example.com/login",
-  "username_selector": "#email-input",
-  "password_selector": "#password-input",
-  "submit_selector": "button[type='submit']"
-}
-```
-
----
-
-## 🔬 Test Suite Catalog
-
-QA Agent includes **15+ specialized testing engines**:
-
-### A. Core UI/UX Suites
-
-| Suite | Flag | Description |
+| Variable | Required | Description |
 |---|---|---|
-| **Keyboard Navigation** | `--skip-keyboard` (default ON) | Validates tab order, focus visibility, keyboard traps, and skip-to-content links |
-| **Mouse Interaction** | `--skip-mouse` (default ON) | Tests hover states, dynamic dropdowns, broken links, and target element reactivity |
-| **Form Handling** | `--skip-forms` (default ON) | Fuzzes input fields, checks HTML5 validations, aria-labels, and password toggles |
-| **Accessibility Audit** | `--skip-accessibility` (default ON) | Checks image `alt` tags, heading hierarchy (`h1`-`h6`), contrast ratios, and ARIA roles |
-| **Error Detector** | `--skip-errors` (default ON) | Traps uncaught JS console errors, unhandled promise rejections, & HTTP 4xx/5xx network failures |
-| **WCAG Compliance** | `--wcag-compliance` (opt-in) | In-depth audit enforcing WCAG 2.1 AA guidelines across color, structure, and text sizing |
-| **Custom AI Tester** | Auto-enabled with `--instructions` | Executes AI-planned action/assertion sequences (clicks, fills, keypresses, visibility assertions) |
+| `OMNIKEY_API_KEY` | For AI features | OmniKey API key |
+| `OMNIKEY_BASE_URL` | No | Override OmniKey base URL |
+| `OMNIKEY_MODEL` | No | Override OmniKey model |
+| `OMNIKEY_TIMEOUT_SECONDS` | No | API request timeout (default: 60) |
+| `ANTHROPIC_API_KEY` | No | Anthropic Claude key (optional; OmniKey used if absent) |
+| `OPENAI_API_KEY` | No | OpenAI key |
 
-### B. DevOps & API Testing Suites
+> **Tip:** QA Agent works without any API key for standard (non-AI) test suites. AI keys are only needed for `--instructions`, AI analysis, and the Quick Test mode.
 
-| Suite | Flag | Description |
-|---|---|---|
-| **REST API Tester** | `--enable-api-tests` | Verifies REST API status codes, response content-types, payload schemas, and latency |
-| **Newman / Postman** | `--postman-collection FILE` | Executes complex Postman collections against target APIs via Newman integration |
-| **Code Quality** | `--enable-code-quality` | Runs linting and static analysis checks on target codebase components |
-| **Project Health** | `--enable-project-health` | Audits workspace repository structure, license files, and dependency lockfiles |
+---
 
-### C. Security & Infrastructure Suites
+## 🧪 Test Suites
 
-| Suite | Flag | Description |
-|---|---|---|
-| **Security Checks** | `--enable-security-checks` | Scans HTTP security headers (`HSTS`, `CSP`, `X-Frame-Options`), SSL/TLS configs, and cookies |
-| **Docker Tester** | `--enable-docker-tests` | Validates Dockerfile best practices, user permissions, and container runtime settings |
-| **Container Security**| `--enable-container-security` | Scans container images for vulnerabilities, root execution risks, and exposed secrets |
-| **OWASP ZAP Tester** | `--enable-web-security` | Integrates with OWASP ZAP to run automated web vulnerability scans (XSS, SQLi, CSRF) |
+### Keyboard Navigation (`testers/keyboard.py`)
 
-### D. Performance & Load Testing Suite
+| Check | WCAG Criterion |
+|---|---|
+| TAB key reachability for all interactive elements | 2.1.1 |
+| Arrow key navigation inside widgets (menus, tabs) | 2.1.1 |
+| Enter key activates buttons and links | 2.1.1 |
+| Escape key closes modals and dropdowns | 2.1.1 |
+| Keyboard trap detection | 2.1.2 |
+| Focus indicator visibility | 2.4.7 |
 
-| Suite | Flag | Description |
-|---|---|---|
-| **Locust Load Test** | `--enable-performance-tests` | Simulates user load via Locust, measuring p95 response time and error rate caps |
+### Mouse Interactions (`testers/mouse.py`)
+
+| Check | Details |
+|---|---|
+| Click target functionality | All buttons, links, and controls respond to clicks |
+| Hover state feedback | Visual feedback on hover |
+| Double-click behavior | Double-click actions work correctly |
+| Right-click / context menus | Context menu behavior |
+| Click target size | WCAG 2.5.5 — minimum 44×44 px |
+| Overlapping elements | No unintended click interception |
+
+### Form Handling (`testers/forms.py`)
+
+| Check | Details |
+|---|---|
+| Required field indicators | Visual and ARIA markers for required fields |
+| Input validation feedback | Error messages appear on invalid submission |
+| Error message accessibility | Errors linked to inputs via `aria-describedby` |
+| Form label associations | All inputs have associated `<label>` elements |
+| HTML5 input types | `email`, `tel`, `number`, etc. used appropriately |
+| Autocomplete attributes | `autocomplete` set on personal data fields |
+
+### Accessibility (`testers/accessibility.py`)
+
+| Check | WCAG Criterion |
+|---|---|
+| Image alt text | 1.1.1 |
+| Heading structure (h1–h6) | 1.3.1 |
+| Link text quality (no "click here") | 2.4.4 |
+| Color contrast ratio | 1.4.3 (AA: 4.5:1 normal, 3:1 large) |
+| ARIA role and attribute correctness | 4.1.2 |
+| Landmark regions (`main`, `nav`, `header`, `footer`) | 1.3.1 |
+| Page language attribute | 3.1.1 |
+| Skip navigation links | 2.4.1 |
+
+### WCAG Compliance (`testers/wcag_compliance.py`)
+
+Extended WCAG 2.1 Level AA checks beyond the base accessibility suite.
+
+### Console & Network Errors (`testers/errors.py`)
+
+| Check | Details |
+|---|---|
+| JavaScript console errors | Any `console.error()` calls |
+| Network errors | HTTP 4xx and 5xx responses |
+| JavaScript exceptions | Uncaught errors and promise rejections |
+| Broken images | `<img>` tags that fail to load |
+| Broken anchor links | Internal links that return 404 |
+| Mixed content | HTTP resources on HTTPS pages |
+
+### Custom AI Tests (`testers/custom.py`)
+
+When `--instructions` is provided or instructions are entered in the Web UI, the AI planner generates custom Playwright steps. Examples:
+
+- *"Verify the search bar returns at least 5 results for 'laptop'"*
+- *"Add a product to cart and confirm the cart counter increments"*
+- *"Submit the contact form and verify the success message appears"*
+
+---
+
+## 📄 Output Formats
+
+| Format | Flag | File | Description |
+|---|---|---|---|
+| **Console** | `console` | — | Real-time colored output to stdout |
+| **Markdown** | `markdown` | `report.md` | Full report with tables, findings, and screenshots |
+| **JSON** | `json` | `report.json` | Machine-readable; ideal for CI/CD parsing |
+| **PDF** | `pdf` | — | WeasyPrint PDF (optional; see note below) |
+
+> **Windows note:** `weasyprint` requires GTK libraries that are complex to install on Windows. For PDF output from the Web UI, use the **Download PDF** button which uses the browser's native print dialog instead.
+
+### Install WeasyPrint (Linux/macOS)
 
 ```bash
-# Configure Locust Performance Benchmark
-qa-agent --enable-performance-tests \
-  --locust-users 20 \
-  --locust-spawn-rate 5 \
-  --locust-duration 10 \
-  --max-p95-ms 2000 \
-  --max-error-rate 2.0 \
-  https://example.com
+pip install -e ".[pdf]"
 ```
 
 ---
 
-## 🌐 Web Interface & REST API
+## 🛠️ Extending QA Agent
 
-QA Agent includes a built-in Flask web application providing a graphical dashboard and a complete REST API.
+### Adding a New Test Suite
 
-```bash
-# Launch the web interface (Default: http://127.0.0.1:5000)
-python -m qa_agent web
-
-# Bind to custom host and port
-qa-agent-web --host 0.0.0.0 --port 8080
-```
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/billrichards/qa-agent/main/docs/web-UI-configuration-form.png" alt="Web Dashboard Form" width="800">
-</p>
-
-### Web Dashboard Features
-- **Graphical Form**: Launch test runs with custom URLs, mode selection, worker configuration, and agentic instructions.
-- **Real-Time Log Stream**: View live execution output powered by Server-Sent Events (SSE).
-- **Session Manager**: Inspect past testing runs grouped by domain.
-- **Interactive Reports**: Browse detailed findings tables, inspect full-page error screenshots, and download PDF/JSON artifacts.
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/billrichards/qa-agent/main/docs/session-detail-view-showing-findings-table.png" alt="Session Detail View" width="800">
-</p>
-
----
-
-### REST API Endpoints
-
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/run` | `POST` | Trigger a new test run. Accepts JSON matching `TestConfig` schema. Returns `job_id`. |
-| `/api/stream/<job_id>` | `GET` | SSE stream endpoint delivering real-time output text logs and status events. |
-| `/api/sessions` | `GET` | List all historical test sessions with pagination (`?limit=10&offset=0`). |
-| `/api/sessions/<session_id>` | `GET` | Retrieve full JSON details and findings for a specific test session. |
-| `/api/stop/<job_id>` | `POST` | Gracefully cancel a currently executing test job. |
-
-*Example `POST /api/run` payload:*
-```json
-{
-  "urls": ["https://example.com"],
-  "mode": "explore",
-  "max_pages": 10,
-  "workers": 2,
-  "instructions": "Ensure user profile updates correctly."
-}
-```
-
----
-
-## 🐍 Programmatic Python API
-
-Embed `QA Agent` directly into existing Python test frameworks, backend servers, or automation scripts.
-
-### Single Session Execution
+1. Create `qa_agent/testers/my_tester.py` extending `BaseTester`:
 
 ```python
-from qa_agent import QAAgent, TestConfig, TestMode, OutputFormat
-
-# 1. Construct Configuration
-config = TestConfig(
-    urls=["https://example.com"],
-    mode=TestMode.EXPLORE,
-    output_formats=[OutputFormat.CONSOLE, OutputFormat.JSON, OutputFormat.MARKDOWN],
-    max_depth=2,
-    max_pages=15,
-    workers=2,
-    instructions="Check that all footer links navigate to valid pages.",
-)
-
-# 2. Initialize and Run Agent
-agent = QAAgent(config)
-session = agent.run()
-
-# 3. Inspect Session Results
-print(f"Session ID:      {session.session_id}")
-print(f"Status:          {session.status}")
-print(f"Pages Tested:    {len(session.pages_tested)}")
-print(f"Total Findings:  {session.total_findings}")
-
-# Iterate over findings
-for finding in session.get_deduplicated_findings():
-    print(f"[{finding.severity.value.upper()}] {finding.title} @ {finding.url}")
-```
-
-### Parallel Batch Execution
-
-```python
-from qa_agent import BatchRunner, TestConfig, TestMode
-
-configs = [
-    TestConfig(urls=["https://example.com/app1"], mode=TestMode.EXPLORE, workers=2),
-    TestConfig(urls=["https://example.com/app2"], instructions="Verify login flow"),
-]
-
-# Run multiple test configurations concurrently across a pool of 4 workers
-with BatchRunner(pool_size=4) as runner:
-    results = runner.run_all(configs)
-    for result in results:
-        if isinstance(result, Exception):
-            print(f"Test run failed: {result}")
-        else:
-            print(f"Session {result.session_id} finished with {result.total_findings} findings.")
-```
-
----
-
-## 🧠 Deduplication & Narrative AI Summaries
-
-### URL Normalization & Deduplication Engine
-When crawling dynamic applications (e.g. `/products/101`, `/products/102`), testing engines often discover the exact same issue across hundreds of parameterized pages.
-
-QA Agent standardizes path segments using `_normalize_url`:
-- UUIDs (`550e8400-e29b-41d4-a716-446655440000`) $\rightarrow$ `{id}`
-- Numeric IDs (`/users/42/settings`) $\rightarrow$ `/users/{id}/settings`
-- Slug patterns (`/items/123-blue-widget`) $\rightarrow$ `/items/{id}`
-
-Findings sharing the same title, category, severity, and normalized URL are merged into a single `Finding` object, with all original URLs stored in `affected_urls`.
-
-### Narrative AI Summary (`--summary`)
-When `--summary` is enabled, QA Agent performs post-run LLM synthesis to produce:
-1. **Executive Summary**: High-level narrative for engineering management.
-2. **Root Cause Clusters**: Groups related symptoms across pages to their root cause (e.g., *Missing global CSS stylesheet causing nationwide contrast failures*).
-3. **Priority Recommendations**: Ranked list of actionable fixes.
-4. **False Positive Candidates**: Highlights potential low-confidence warnings.
-
----
-
-## 🛠 Extending QA Agent (Custom Testers)
-
-You can extend QA Agent by adding custom test suites.
-
-### 1. Create your tester module
-Create a new file in `qa_agent/testers/my_custom_tester.py` extending `BaseTester`:
-
-```python
-# qa_agent/testers/my_custom_tester.py
-from playwright.sync_api import Page
 from .base import BaseTester
-from ..models import Finding, FindingCategory, Severity, FindingStatus
+from ..models import Finding, Severity
 
-class MyCustomTester(BaseTester):
-    """Custom tester verifying specific business logic rules."""
-
-    def run(self) -> list[Finding]:
-        findings: list[Finding] = []
-
-        # Access Playwright page and TestConfig via self.page and self.config
-        buttons = self.page.query_selector_all("button.action-btn")
-        for btn in buttons:
-            if not btn.get_attribute("aria-label"):
-                findings.append(
-                    Finding(
-                        title="Action Button Missing Aria-Label",
-                        description="Action buttons must have explicit aria-label attributes.",
-                        category=FindingCategory.ACCESSIBILITY,
-                        severity=Severity.MEDIUM,
-                        url=self.page.url,
-                        element_selector="button.action-btn",
-                        recommendation="Add an aria-label attribute describing the action.",
-                    )
-                )
+class MyTester(BaseTester):
+    async def run(self) -> list[Finding]:
+        findings = []
+        # Use self.page (Playwright page object)
+        # Use self._finding() to create Finding objects
+        # Use await self._take_screenshot() to capture
         return findings
 ```
 
-### 2. Export in `qa_agent/testers/__init__.py`
-```python
-from .my_custom_tester import MyCustomTester
+2. Register in `qa_agent/testers/__init__.py`
+3. Add a config flag in `qa_agent/config.py` (e.g., `test_my_feature: bool = True`)
+4. Call from `qa_agent/agent.py` inside `_test_page()`
 
-__all__ = [..., "MyCustomTester"]
-```
+### Finding Severity Levels
 
-### 3. Register in `TestConfig` & `QAAgent`
-Add a configuration toggle in `config.py`:
-```python
-@dataclass
-class TestConfig:
-    # ...
-    test_my_custom_rule: bool = True
-```
-
-In `qa_agent/agent.py`, invoke your tester inside page execution:
-```python
-if self.config.test_my_custom_rule:
-    from .testers import MyCustomTester
-    findings.extend(MyCustomTester(page, self.config).run())
-```
+| Level | When to Use |
+|---|---|
+| `CRITICAL` | Security vulnerabilities, data loss risk |
+| `HIGH` | Major usability blockers, broken core flows |
+| `MEDIUM` | Accessibility failures, UX degradation |
+| `LOW` | Minor improvements, best-practice gaps |
+| `INFO` | Informational observations |
 
 ---
 
-## 🚀 CI/CD Pipeline Integration
+## ⚙️ CI/CD Integration
 
-### GitHub Actions Workflow
+### Exit Codes
 
-Create `.github/workflows/qa-agent.yml`:
+| Code | Meaning |
+|---|---|
+| `0` | All tests passed (or findings below threshold) |
+| `1` | Findings found at or above the configured severity threshold |
+| `2` | Runtime error (browser failed, invalid URL, etc.) |
+
+### GitHub Actions Example
 
 ```yaml
-name: Automated QA Audit
+- name: Run QA Agent
+  env:
+    OMNIKEY_API_KEY: ${{ secrets.OMNIKEY_API_KEY }}
+  run: |
+    pip install -e .
+    playwright install chromium
+    python -m qa_agent --output json,markdown --screenshots https://staging.example.com
 
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-  schedule:
-    - cron: '0 0 * * *' # Run daily at midnight
+- name: Upload QA Report
+  uses: actions/upload-artifact@v4
+  with:
+    name: qa-report
+    path: qa-agent-output/
+```
 
-jobs:
-  qa-audit:
-    runs-on: ubuntu-latest
+### JSON Report Schema
 
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install Dependencies & QA Agent
-        run: |
-          python -m pip install --upgrade pip
-          pip install "qa-agent[all]"
-          playwright install --with-deps chromium
-
-      - name: Execute QA Agent
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          qa-agent --mode explore \
-            --max-depth 2 \
-            --max-pages 20 \
-            --workers 4 \
-            --output console,markdown,json \
-            --screenshots \
-            --fail-on-severity high \
-            https://staging.example.com
-
-      - name: Upload Test Reports & Screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: qa-agent-reports
-          path: ./qa-agent-output/
+```json
+{
+  "session_id": "abc12345",
+  "url": "https://example.com",
+  "started_at": "2026-10-29T03:00:00",
+  "duration_seconds": 42.3,
+  "pages_tested": 5,
+  "findings": [
+    {
+      "severity": "MEDIUM",
+      "category": "accessibility",
+      "title": "Image missing alt text",
+      "description": "...",
+      "url": "https://example.com/about",
+      "screenshot": "screenshots/001.png"
+    }
+  ]
+}
 ```
 
 ---
 
-## 🚦 Exit Codes & Failure Thresholds
+## 🔧 Troubleshooting
 
-QA Agent returns explicit process exit codes for automated build pipelines:
+### AI Analysis fails with "Anthropic API key not found"
 
-| Exit Code | Condition |
-|---|---|
-| `0` | All tests completed successfully with no findings exceeding failure threshold |
-| `1` | One or more findings exceeded severity threshold (`CRITICAL` or `HIGH` by default) |
-| `2` | Execution error (invalid configuration, unreachable initial target URL, browser failure) |
-| `130` | Session interrupted manually via KeyboardInterrupt (`Ctrl+C`) |
+QA Agent automatically falls back to OmniKey when `ANTHROPIC_API_KEY` is not set and `OMNIKEY_API_KEY` is available. If you see this error, ensure `OMNIKEY_API_KEY` is set in your environment or `.env` file.
 
-### Customizing Failure Severity Thresholds
-Use `--fail-on-severity` to control when CI builds fail:
+### Web UI won't start
 
 ```bash
-# Fail CI build ONLY on CRITICAL findings
-qa-agent --fail-on-severity critical https://example.com
+# Install web dependencies
+pip install -e ".[web]"
 
-# Fail CI build on MEDIUM, HIGH, or CRITICAL findings
-qa-agent --fail-on-severity medium https://example.com
+# Start correctly (not qa-agent-web)
+python -m qa_agent.web.server
 ```
 
----
+### Playwright browser not found
 
-## 📋 Comprehensive CLI Argument Reference Table
-
-| Flag | Category | Default | Description |
-|---|---|---|---|
-| `urls` | General | Positional | One or more target URLs to test |
-| `--version` | General | `False` | Show program's version number and exit |
-| `--mode {focused,explore}` | Execution | `focused` | `focused`: test target URLs only; `explore`: crawl dynamic links |
-| `--instructions TEXT` | Agentic AI | `None` | Natural language instructions for AI test step generation |
-| `--instructions-file PATH`| Agentic AI | `None` | Path to text file containing natural language instructions |
-| `--llm {anthropic,openai}`| Agentic AI | `anthropic` | LLM provider for AI instructions |
-| `--ai-model MODEL` | Agentic AI | Provider Default | Model override (`claude-sonnet-4-6`, `gpt-4o`) |
-| `--no-cache` | Agentic AI | `False` | Bypass 24-hour disk plan cache |
-| `--summary` | Agentic AI | `False` | Generate LLM post-run narrative analysis & root cause summary |
-| `--workers N` | Concurrency | `1` | Number of parallel browser page-workers (1-16) |
-| `--rate-limit N` | Concurrency | `3.0` | Max page navigations/sec per host (`0` = unlimited) |
-| `--batch-file PATH` | Batch | `None` | JSON file containing multiple run specifications |
-| `--pool-size N` | Batch | `4` | Max concurrent sessions for batch runs (1-8) |
-| `--max-depth N` | Exploration | `3` | Maximum link depth traversal in explore mode |
-| `--max-pages N` | Exploration | `100` | Maximum pages to test in explore mode |
-| `--max-interactions N` | Exploration | `50` | Maximum element interactions per page |
-| `--allow-external` | Exploration | `False` | Allow crawler to follow links to external domains |
-| `--ignore PATTERN` | Exploration | `[]` | Regex patterns for URLs to skip during crawling |
-| `--auth SPEC` | Auth | `None` | Credentials spec: `user:pass@url` |
-| `--auth-file PATH` | Auth | `None` | Path to JSON file containing auth configuration |
-| `--cookies PATH` | Auth | `None` | Path to JSON cookies file |
-| `--header HEADER` | Auth | `None` | Custom HTTP header (repeatable, e.g. `"Auth: Bearer x"`) |
-| `--output FORMATS` | Output | `console,markdown` | Output formats comma-separated (`console,markdown,json,pdf`) |
-| `--output-dir PATH` | Output | `./qa-agent-output` | Target directory for generated reports |
-| `--screenshots` | Media | `False` (on error) | Capture screenshot evidence on test errors |
-| `--screenshots-all` | Media | `False` | Capture screenshot evidence on every interaction |
-| `--full-page` | Media | `False` | Capture full-page scrollable screenshots |
-| `--record` | Media | `False` | Record WebM session video recordings |
-| `--no-headless` | Browser | `False` | Launch visible browser window (headed mode) |
-| `--viewport WxH` | Browser | `1280x720` | Browser viewport dimensions |
-| `--timeout MS` | Browser | `30000` | Navigation & element action timeout in milliseconds |
-| `--skip-keyboard` | Suites | `False` | Skip keyboard navigation test suite |
-| `--skip-mouse` | Suites | `False` | Skip mouse interaction test suite |
-| `--skip-forms` | Suites | `False` | Skip form handling test suite |
-| `--skip-accessibility` | Suites | `False` | Skip accessibility test suite |
-| `--skip-errors` | Suites | `False` | Skip console & network error trap suite |
-| `--wcag-compliance` | Suites | `False` | Enable comprehensive WCAG 2.1 AA compliance audit |
-| `--enable-api-tests` | DevOps | `False` | Enable REST API verification suite |
-| `--postman-collection` | DevOps | `None` | Path to Postman collection JSON for Newman testing |
-| `--enable-code-quality` | DevOps | `False` | Enable code quality linting suite |
-| `--enable-security-checks`| DevOps | `False` | Enable security header & SSL audit suite |
-| `--enable-docker-tests` | DevOps | `False` | Enable Docker container audit suite |
-| `--enable-container-sec` | DevOps | `False` | Enable container security scanner suite |
-| `--enable-web-security` | DevOps | `False` | Enable OWASP ZAP vulnerability scanner |
-| `--enable-performance` | DevOps | `False` | Enable Locust performance load testing suite |
-| `--fail-on-severity` | CI/CD | `high` | Severity threshold for exit code 1 (`critical,high,medium,low`) |
-
----
-
-## ❓ Troubleshooting & FAQs
-
-### 1. Playwright browser executable is missing
-If Playwright raises an error stating `Executable doesn't exist`, run:
 ```bash
 playwright install chromium
-```
-In Linux CI environments, install operating system dependencies:
-```bash
-playwright install-deps chromium
+# Or install all browsers:
+playwright install
 ```
 
-### 2. PDF generation fails or falls back to Markdown
-PDF generation relies on `WeasyPrint`. Install the `pdf` extra:
-```bash
-pip install "qa-agent[pdf]"
-```
-*Note for GTK dependencies*: On Windows/macOS, WeasyPrint may require native GTK libraries. If absent, QA Agent falls back to Markdown reporting.
+### Tests run but no AI analysis
 
-### 3. Agentic AI instructions warning
-If QA Agent outputs `[WARNING] AI planning failed: API key missing`, ensure your environment variable is exported:
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-# or
-export OPENAI_API_KEY="sk-..."
+AI analysis requires an API key. Set `OMNIKEY_API_KEY` in your environment:
+
+```powershell
+# PowerShell
+$env:OMNIKEY_API_KEY = "omnikey-g-your-key-here"
 ```
 
-### 4. High CPU/RAM utilization during parallel runs
-Each worker thread spawns a distinct browser context. When running with high worker counts (`--workers 8` or higher), ensure your system has sufficient RAM (approx. 150MB-300MB RAM per worker). Adjust `--rate-limit` to prevent target server congestion.
+```bash
+# bash
+export OMNIKEY_API_KEY="omnikey-g-your-key-here"
+```
+
+### PDF export doesn't work
+
+The **Download PDF** button in the Web UI uses the browser's built-in **Print → Save as PDF**. No additional software is required. If the print dialog doesn't appear, check that your browser allows pop-ups from `localhost:5000`.
+
+### Tests run very slowly
+
+- Increase `--workers` for parallel page testing
+- Use `--mode focused` to test only specific URLs instead of crawling
+- Enable `--headless` (default) to skip rendering overhead
+- Reduce `--max-interactions` per page
+
+### `ruff` lint errors on contribution
+
+```bash
+pip install ruff
+ruff check --fix qa_agent/
+ruff format qa_agent/
+```
 
 ---
 
-## 📚 Further Documentation
+## 📦 Installation Options
 
-| Document | Description |
-|---|---|
-| [Architecture](docs/architecture.md) | System architecture and how to extend QA Agent |
-| [Development Guide](docs/development.md) | Detailed development setup, testing, and build processes |
-| [Python API Reference](docs/api-reference.md) | Programmatic usage for embedding QA Agent in Python code |
-| [Test Categories](docs/test-categories.md) | Detailed test-by-test reference |
-| [Web API](docs/web-api.md) | Full REST API documentation |
-| [Contributing](CONTRIBUTING.md) | Contribution guidelines and pull request process |
+```bash
+# Core (CLI only)
+pip install -e .
+
+# With Web UI
+pip install -e ".[web]"
+
+# With PDF support (WeasyPrint — Linux/macOS recommended)
+pip install -e ".[pdf]"
+
+# Everything
+pip install -e ".[web,pdf]"
+
+# Run tests
+pytest tests/ --no-cov
+```
 
 ---
 
-## 📄 License & Contributing
+## 📁 Session Storage
 
-Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for complete licensing terms.
+Sessions are stored locally in the output directory as JSON files:
 
-Contributions, issues, and feature requests are welcome! Check out [`CONTRIBUTING.md`](CONTRIBUTING.md) for development environment setup and guidelines.
+```
+qa-agent-output/
+└── sessions/
+    └── example.com/
+        └── <session_id>/
+            ├── session.json      # Full session data
+            ├── report.md         # Markdown report
+            ├── report.json       # JSON report
+            └── screenshots/
+                ├── 001.png
+                └── 002.png
+```
+
+The Web UI reads these files at runtime — no database required.
+
+---
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE) for details.
 
 ---
 
 <p align="center">
-  <b>Built with ❤️ for modern software development & QA engineering teams.</b>
+  Built with ❤️ using <a href="https://playwright.dev/python/">Playwright</a> and <a href="https://flask.palletsprojects.com/">Flask</a>
 </p>
