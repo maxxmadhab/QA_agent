@@ -15,7 +15,15 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from .concurrency import Frontier, PageIndexer
 from .config import OutputFormat, TestConfig, TestMode
-from .models import BrowserResult, Finding, FindingCategory, PageAnalysis, Severity, TestPlan, TestSession
+from .models import (
+    BrowserResult,
+    Finding,
+    FindingCategory,
+    PageAnalysis,
+    Severity,
+    TestPlan,
+    TestSession,
+)
 from .rate_limiter import HostRateLimiter
 from .reporters import ConsoleReporter, JSONReporter, MarkdownReporter, PDFReporter
 from .reporters.base import BaseReporter
@@ -783,6 +791,8 @@ class QAAgent:
                     # domcontentloaded succeeded, so the page is ready for interaction and testing
                     pass
             load_time = (time.time() - start_time) * 1000
+            if self.config.screenshots.enabled:
+                self._take_screenshot(page, f"page_{page_index}_preview")
         except Exception as e:
             self.console.print_error(f"Error loading page: {e}")
             return
@@ -1056,6 +1066,7 @@ class QAAgent:
                 path=filepath,
                 full_page=self.config.screenshots.full_page
             )
+            print(f"[SCREENSHOT] {filepath}")
             return filepath
         except Exception:
             return None

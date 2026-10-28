@@ -89,6 +89,34 @@
     if (terminalContent) terminalContent.innerHTML = '';
   });
 
+  // ── Terminal Tabs & Fullscreen Preview ───────────────────────────────────────
+  const termTabs = document.querySelectorAll('.terminal-tab');
+  const previewPanelContainer = document.getElementById('preview-panel-container');
+  termTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      termTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const target = tab.dataset.tab;
+      if (target === 'preview' && previewPanelContainer) {
+        previewPanelContainer.scrollIntoView({ behavior: 'smooth' });
+        previewPanelContainer.style.boxShadow = '0 0 0 3px var(--accent)';
+        setTimeout(() => {
+          previewPanelContainer.style.boxShadow = '';
+        }, 1200);
+      }
+    });
+  });
+
+  document.getElementById('fullscreen-preview-btn')?.addEventListener('click', () => {
+    const box = document.getElementById('live-preview-box');
+    if (!box) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      box.requestFullscreen?.().catch(() => {});
+    }
+  });
+
   // ── Elapsed timer ───────────────────────────────────────────────────────────
   let startTime = null;
   let elapsedInterval = null;
@@ -188,6 +216,45 @@
       } catch (_) {}
     });
 
+    let screenshotCount = 0;
+    const ssCountBadge = document.getElementById('ss-count-badge');
+    const screenshotsList = [];
+
+    es.addEventListener('test_step', e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.category && previewTimestamp) {
+          previewTimestamp.innerHTML = `<span class="dot-pulse" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--orange); margin-right:4px;"></span> Testing: ${escapeHtml(data.category)}...`;
+        }
+        if (previewPlaceholder && previewPlaceholder.style.display !== 'none') {
+          const statusText = previewPlaceholder.querySelector('div');
+          if (statusText) statusText.textContent = `Running ${escapeHtml(data.category)} tests...`;
+        }
+      } catch (_) {}
+    });
+
+    es.addEventListener('screenshot', e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.url) {
+          screenshotsList.push(data.url);
+          screenshotCount++;
+          if (ssCountBadge) ssCountBadge.textContent = `(${screenshotCount})`;
+
+          if (previewImg) {
+            previewImg.src = data.url;
+            previewImg.style.display = 'block';
+          }
+          if (previewPlaceholder) {
+            previewPlaceholder.style.display = 'none';
+          }
+          if (previewTimestamp) {
+            previewTimestamp.innerHTML = `📸 Live Screenshot &bull; ${escapeHtml(data.timestamp || 'Active')}`;
+          }
+        }
+      } catch (_) {}
+    });
+
     es.addEventListener('progress', e => {
       try {
         const data = JSON.parse(e.data);
@@ -195,6 +262,10 @@
         if (statPages) statPages.textContent = pageCount;
         if (data.url && currentUrlDisplay) {
           currentUrlDisplay.textContent = data.url;
+          currentUrlDisplay.title = data.url;
+        }
+        if (previewTimestamp) {
+          previewTimestamp.innerHTML = `<span class="dot-pulse" style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--orange); margin-right:4px;"></span> Page ${pageCount} Loaded`;
         }
         appendLog(data.message || `Testing ${data.url}`);
         setProgress(Math.min(85, currentPct + 10));

@@ -439,6 +439,25 @@ class TestQueueWriter:
         assert len(finding_events) == 1
         assert finding_events[0]["data"]["severity"] == "high"
 
+    def test_test_step_emits_step_and_log_event(self):
+        writer, q, events = self._writer()
+        writer.write("📋 Running keyboard navigation tests...\n")
+        assert any(e["type"] == "test_step" for e in events)
+        step = next(e for e in events if e["type"] == "test_step")
+        assert "keyboard navigation" in step["data"]["category"]
+        assert any(e["type"] == "log" for e in events)
+
+    def test_screenshot_line_emits_screenshot_event(self, tmp_output):
+        from qa_agent.web.server import OUTPUT_DIR
+        writer, q, events = self._writer()
+        img_path = OUTPUT_DIR / "example.com" / "sess-1" / "screenshots" / "shot.png"
+        img_path.parent.mkdir(parents=True, exist_ok=True)
+        img_path.write_text("fake")
+        writer.write(f"[SCREENSHOT] {img_path}\n")
+        assert any(e["type"] == "screenshot" for e in events)
+        ss = next(e for e in events if e["type"] == "screenshot")
+        assert "shot.png" in ss["data"]["url"]
+
     def test_ansi_codes_stripped(self):
         writer, q, events = self._writer()
         writer.write("\x1b[91mERROR\x1b[0m some message\n")

@@ -67,6 +67,7 @@ class BaseTester(ABC):
                 path=filepath,
                 full_page=self.config.screenshots.full_page
             )
+            print(f"[SCREENSHOT] {filepath}")
             return filepath
         except Exception:
             return None

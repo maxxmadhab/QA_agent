@@ -142,6 +142,32 @@ class _QueueWriter:
             })
             return True
 
+        # Screenshot: "[SCREENSHOT] <path>"
+        m = re.search(r"\[SCREENSHOT\]\s+(.+)", line)
+        if m:
+            raw_path = m.group(1).strip()
+            try:
+                rel = Path(raw_path).resolve().relative_to(OUTPUT_DIR.resolve())
+                file_url = f"/files/{rel.as_posix()}"
+                self._emit("screenshot", {
+                    "url": file_url,
+                    "filename": Path(raw_path).name,
+                    "timestamp": datetime.now().strftime("%H:%M:%S"),
+                })
+                return True
+            except Exception:
+                pass
+
+        # Test Category step: "📋 Running <category> tests..."
+        m = re.search(r"Running\s+([a-zA-Z0-9\.\s\-]+?)\s+tests", line, re.IGNORECASE)
+        if m:
+            category = m.group(1).strip()
+            self._emit("test_step", {
+                "category": category,
+                "message": line.strip(),
+            })
+            return False
+
         return False
 
 
