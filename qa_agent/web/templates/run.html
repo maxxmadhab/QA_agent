@@ -104,56 +104,21 @@
 
     <div id="error-banner" class="alert-box alert-error mb-4" style="display: none;"></div>
 
-    <!-- Split Monitor Panels: Dark Terminal (Left) & Live Preview (Right) -->
-    <div class="monitor-panels-grid">
-      <!-- Dark Terminal Box -->
-      <div class="terminal-box">
-        <div class="terminal-header">
-          <div class="terminal-tabs">
-            <button type="button" class="terminal-tab active" data-tab="logs">Logs</button>
-            <button type="button" class="terminal-tab" data-tab="screenshots">
-              Screenshots <span id="ss-count-badge" style="opacity: 0.75;">(0)</span>
-            </button>
-            <button type="button" class="terminal-tab" data-tab="preview">Live Preview</button>
-          </div>
-          <div class="flex items-center gap-2">
-            <button type="button" id="clear-log-btn" class="btn btn-ghost btn-sm" style="color: #A39B92; font-size: 0.75rem; padding: 0.2rem 0.5rem;">Clear</button>
-          </div>
+    <!-- Full-Width Live Execution Terminal -->
+    <div class="terminal-box" style="width: 100%;">
+      <div class="terminal-header">
+        <div class="flex items-center gap-2">
+          <span class="dot-pulse" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--orange);"></span>
+          <span style="font-weight: 600; font-size: 0.85rem; color: #E8E2D9; letter-spacing: 0.03em;">Live Execution Console</span>
+          <span id="current-url-display" class="text-mono" style="font-size: 0.78rem; color: #A39B92; margin-left: 0.5rem; max-width: 450px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
         </div>
-
-        <div id="terminal-content" class="terminal-content">
-          <!-- Live stream logs inserted here -->
+        <div class="flex items-center gap-2">
+          <button type="button" id="clear-log-btn" class="btn btn-ghost btn-sm" style="color: #A39B92; font-size: 0.75rem; padding: 0.2rem 0.6rem;">Clear</button>
         </div>
       </div>
 
-      <!-- Live Preview Card -->
-      <div class="preview-card" id="preview-panel-container">
-        <div class="preview-browser-bar">
-          <span style="font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Live Preview</span>
-          <span id="current-url-display" class="text-mono" style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">-</span>
-        </div>
-        <div class="preview-frame" id="live-preview-box">
-          <div id="preview-placeholder" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); gap: 0.75rem; padding: 2rem; text-align: center;">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-              <line x1="8" y1="21" x2="16" y2="21"></line>
-              <line x1="12" y1="17" x2="12" y2="21"></line>
-            </svg>
-            <div style="font-size: 0.85rem;">Waiting for browser interactions...</div>
-          </div>
-          <img id="live-screenshot-img" src="" alt="Live screenshot" style="display: none; width: 100%; height: 100%; object-fit: contain;">
-        </div>
-        <div class="preview-browser-bar" style="border-top: 1px solid var(--border-subtle); border-bottom: none;">
-          <span id="preview-timestamp" class="text-mono" style="font-size: 0.75rem;">Standby</span>
-          <button type="button" id="fullscreen-preview-btn" class="btn btn-ghost btn-sm" title="Expand preview" style="padding: 0.15rem 0.4rem;">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <polyline points="9 21 3 21 3 15"></polyline>
-              <line x1="21" y1="3" x2="14" y2="10"></line>
-              <line x1="3" y1="21" x2="10" y2="14"></line>
-            </svg>
-          </button>
-        </div>
+      <div id="terminal-content" class="terminal-content" style="min-height: 480px; max-height: 580px;">
+        <!-- Live stream logs inserted here -->
       </div>
     </div>
   </main>
