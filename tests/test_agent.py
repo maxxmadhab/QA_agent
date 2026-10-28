@@ -804,3 +804,28 @@ class TestRateLimiting:
                 p.stop()
 
         assert spy.call_count == len(session.pages_tested) == 3
+
+    def test_auto_fallback_to_omnikey_when_anthropic_key_missing(self):
+        import os
+        from datetime import datetime
+        from unittest.mock import patch
+
+        from qa_agent.llm_client import LLMProvider
+        from qa_agent.models import TestPlan, TestSession
+        config = _make_config(
+            instructions="Test login flow",
+            llm_provider=LLMProvider.ANTHROPIC,
+            use_plan_cache=False,
+        )
+        agent, _ = _make_agent(config)
+        agent.session = TestSession(session_id="test-plan-fallback", start_time=datetime.now())
+
+        mock_plan = TestPlan(summary="OmniKey Generated Plan")
+        env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
+        env["OMNIKEY_API_KEY"] = "omnikey-key-123"
+        with patch.dict(os.environ, env, clear=True):
+            with patch("qa_agent.ai_planner.AIPlannerClient.plan", return_value=mock_plan) as mock_plan_call:
+                agent._generate_test_plan()
+                assert agent.test_plan is not None
+                assert agent.test_plan.summary == "OmniKey Generated Plan"
+                mock_plan_call.assert_called_once()

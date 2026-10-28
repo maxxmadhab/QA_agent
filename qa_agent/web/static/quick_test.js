@@ -123,6 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
       urls: [url],
       mode: 'focused',
       instructions: instructions || undefined,
+      llm_provider: 'omnikey',
       output_formats: ['console', 'markdown', 'json', 'pdf'],
       test_keyboard: true,
       test_mouse: true,

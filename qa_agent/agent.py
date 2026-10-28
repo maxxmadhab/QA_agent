@@ -344,7 +344,7 @@ class QAAgent:
         ``config.use_plan_cache`` is False.
         """
         from .ai_planner import AIPlannerClient, effective_model
-        from .llm_client import LLMError
+        from .llm_client import LLMError, LLMProvider
         from .plan_cache import PlanCache
 
         assert self.session is not None
@@ -364,13 +364,22 @@ class QAAgent:
                     self.session.config_summary["plan_warnings"] = self.test_plan.warnings
                 return
 
-        model_name = effective_model(self.config.llm_provider, self.config.ai_model)
+        provider = self.config.llm_provider
+        # Seamlessly fall back to OmniKey if Anthropic key is absent but OmniKey is configured
+        if (
+            provider == LLMProvider.ANTHROPIC
+            and not os.environ.get("ANTHROPIC_API_KEY")
+            and os.environ.get("OMNIKEY_API_KEY")
+        ):
+            provider = LLMProvider.OMNIKEY
+
+        model_name = effective_model(provider, self.config.ai_model)
         self.console.print_progress(
-            f"Generating AI test plan using {self.config.llm_provider.value}/{model_name}…"
+            f"Generating AI test plan using {provider.value}/{model_name}…"
         )
         try:
             planner = AIPlannerClient(
-                provider=self.config.llm_provider,
+                provider=provider,
                 model=self.config.ai_model,
             )
             base_url = self.config.urls[0] if self.config.urls else ""
