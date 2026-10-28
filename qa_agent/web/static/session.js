@@ -129,7 +129,7 @@
         const res = await fetch(`/api/session/${encodeURIComponent(domain)}/${encodeURIComponent(sessionId)}/analyze`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider: 'anthropic' }),
+          body: JSON.stringify({ provider: 'omnikey' }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'AI analysis request failed');

@@ -129,6 +129,12 @@
 
   // ── LLM Provider & Models ─────────────────────────────────────────────────────
   const MODELS = {
+    omnikey: [
+      { value: 'google/gemma-4-26b-a4b-it:free', label: 'google/gemma-4-26b-a4b-it:free (Active in .env)' },
+      { value: 'gpt-4o', label: 'gpt-4o' },
+      { value: 'claude-3-5-sonnet', label: 'claude-3-5-sonnet' },
+      { value: 'gpt-4o-mini', label: 'gpt-4o-mini' },
+    ],
     anthropic: [
       { value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6 (Default)' },
       { value: 'claude-opus-4-6', label: 'claude-opus-4-6' },
@@ -141,17 +147,12 @@
       { value: 'o1', label: 'o1' },
       { value: 'o1-mini', label: 'o1-mini' },
     ],
-    omnikey: [
-      { value: '', label: 'Auto (from OmniKey /models)' },
-      { value: 'gpt-4o', label: 'gpt-4o' },
-      { value: 'claude-3-5-sonnet', label: 'claude-3-5-sonnet' },
-    ],
   };
 
   const KEY_HINTS = {
+    omnikey: '✓ Active and configured via <code>OMNIKEY_API_KEY</code> in .env',
     anthropic: 'Requires <code>ANTHROPIC_API_KEY</code> environment variable',
     openai: 'Requires <code>OPENAI_API_KEY</code> environment variable',
-    omnikey: 'Requires <code>OMNIKEY_API_KEY</code> (in .env)',
   };
 
   const llmProvider = document.getElementById('llm_provider');
@@ -268,7 +269,8 @@
       same_domain_only: !!fd.get('same_domain_only'),
       ignore_patterns: (fd.get('ignore_patterns') || '').split('\n').map(s => s.trim()).filter(Boolean),
       instructions: fd.get('instructions') || null,
-      ai_model: fd.get('ai_model') || 'claude-sonnet-4-6',
+      llm_provider: fd.get('llm_provider') || 'omnikey',
+      ai_model: fd.get('ai_model') || 'google/gemma-4-26b-a4b-it:free',
       use_plan_cache: !!fd.get('use_plan_cache'),
       screenshots: {
         enabled: !!fd.get('screenshots_enabled'),

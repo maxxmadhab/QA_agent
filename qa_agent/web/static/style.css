@@ -846,14 +846,14 @@ h3 { font-size: 1.4rem; }
 .studio-layout {
   display: grid;
   grid-template-columns: 240px 1fr 280px;
-  gap: 2rem;
+  gap: 2.5rem;
   align-items: start;
 }
 
 .vertical-stepper {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.35rem;
   position: sticky;
   top: 80px;
 }
@@ -861,13 +861,17 @@ h3 { font-size: 1.4rem; }
 .vert-step-item {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 0.85rem;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
   border-radius: var(--radius-md);
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.92rem;
   font-weight: 500;
   cursor: pointer;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
   transition: all 0.15s ease;
 }
 
@@ -877,14 +881,15 @@ h3 { font-size: 1.4rem; }
 }
 
 .vert-step-item.active {
-  color: var(--text);
+  color: var(--ink);
   background: var(--surface);
   font-weight: 600;
+  box-shadow: var(--shadow-sm);
 }
 
 .vert-step-icon {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -892,6 +897,7 @@ h3 { font-size: 1.4rem; }
   font-size: 0.75rem;
   background: var(--surface-active);
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .vert-step-item.active .vert-step-icon {
@@ -907,23 +913,225 @@ h3 { font-size: 1.4rem; }
 .studio-main-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 2.25rem;
+  border-radius: var(--radius-xl);
+  padding: 2.75rem 3rem;
   box-shadow: var(--shadow-sm);
 }
 
 .studio-side-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 1.75rem;
+  border-radius: var(--radius-xl);
+  padding: 2rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 1.25rem;
+  gap: 1.5rem;
   position: sticky;
   top: 80px;
+}
+
+/* ── Form Controls & Spatial Layout (Spacious & Clean) ──────────────────── */
+.form-group {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.65rem !important;
+  margin-bottom: 2.25rem !important;
+  width: 100% !important;
+}
+
+.form-label {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+  color: var(--ink) !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.form-input,
+.form-textarea,
+input[type="text"].form-input,
+input[type="url"].form-input,
+input[type="password"].form-input,
+input[type="number"].form-input,
+select.form-input,
+textarea.form-textarea {
+  display: block !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  padding: 0.85rem 1.15rem !important;
+  background: #FFFDF8 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  color: var(--ink) !important;
+  font-family: inherit !important;
+  font-size: 0.95rem !important;
+  line-height: 1.5 !important;
+  box-shadow: 0 1px 2px rgba(25, 20, 15, 0.04) !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease !important;
+}
+
+.form-textarea,
+textarea.form-textarea {
+  min-height: 120px !important;
+  resize: vertical !important;
+  line-height: 1.6 !important;
+}
+
+.form-input:focus,
+.form-textarea:focus,
+input[type="text"]:focus,
+input[type="url"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
+  outline: none !important;
+  border-color: var(--accent) !important;
+  background: #FFFFFF !important;
+  box-shadow: 0 0 0 3px rgba(255, 170, 22, 0.22) !important;
+}
+
+/* Radio Card Selection Grid */
+.radio-card-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 1.25rem !important;
+  width: 100% !important;
+  margin-top: 0.35rem !important;
+}
+
+.radio-card {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 1rem !important;
+  padding: 1.25rem 1.5rem !important;
+  background: #FFFDF8 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-lg) !important;
+  cursor: pointer !important;
+  transition: all 0.18s ease !important;
+}
+
+.radio-card:hover {
+  background: #FFFFFF !important;
+  border-color: var(--accent) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.radio-card.active {
+  border-color: var(--accent) !important;
+  background: var(--accent-light) !important;
+  box-shadow: 0 0 0 1px var(--accent) !important;
+}
+
+.radio-indicator {
+  width: 18px !important;
+  height: 18px !important;
+  border-radius: 50% !important;
+  border: 2px solid #C7BFA7 !important;
+  margin-top: 2px !important;
+  position: relative !important;
+  flex-shrink: 0 !important;
+  transition: all 0.15s ease !important;
+}
+
+.radio-card.active .radio-indicator {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  box-shadow: inset 0 0 0 3px #FFFDF8 !important;
+}
+
+/* Checkbox Groups & Cards */
+.checkbox-group {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 1.75rem !important;
+  align-items: center !important;
+  margin-top: 0.35rem !important;
+}
+
+.checkbox-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.65rem !important;
+  cursor: pointer !important;
+  font-size: 0.92rem !important;
+  font-weight: 500 !important;
+  color: var(--ink) !important;
+  user-select: none !important;
+}
+
+.form-checkbox, input[type="checkbox"] {
+  width: 18px !important;
+  height: 18px !important;
+  accent-color: var(--orange) !important;
+  cursor: pointer !important;
+  border-radius: 4px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Category Selection Cards in Step 2 */
+.category-option-card {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 1.15rem !important;
+  padding: 1.25rem 1.5rem !important;
+  background: #FFFDF8 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-md) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  margin-bottom: 1rem !important;
+}
+
+.category-option-card:hover {
+  background: #FFFFFF !important;
+  border-color: var(--accent) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* Grid Layouts with Real Gap & Flow */
+.grid {
+  display: grid !important;
+  gap: 1.5rem !important;
+  width: 100% !important;
+}
+
+.grid-cols-2 {
+  grid-template-columns: repeat(2, 1fr) !important;
+}
+
+.grid-cols-3 {
+  grid-template-columns: repeat(3, 1fr) !important;
+}
+
+.studio-step-heading {
+  font-family: var(--font-serif) !important;
+  font-size: 2.25rem !important;
+  font-weight: 500 !important;
+  color: var(--ink) !important;
+  margin: 0 0 0.35rem 0 !important;
+  line-height: 1.15 !important;
+}
+
+.studio-step-subtitle {
+  color: var(--text-muted) !important;
+  font-size: 1rem !important;
+  margin: 0 0 2rem 0 !important;
+  line-height: 1.5 !important;
+}
+
+.step-nav-footer {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-top: 2.75rem !important;
+  padding-top: 1.75rem !important;
+  border-top: 1px solid var(--border-subtle) !important;
 }
 
 /* ── Live Monitor Screen (Screen 4) ──────────────────────────────────────── */

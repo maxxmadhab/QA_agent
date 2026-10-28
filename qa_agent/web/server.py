@@ -724,11 +724,27 @@ def api_analyze_session(domain: str, session_id: str):
     from ..report_analyzer import ReportAnalyzer
     body = request.get_json(force=True, silent=True) or {}
     from ..llm_client import LLMProvider
-    provider_str = body.get("provider", "omnikey")
-    try:
-        provider = LLMProvider(provider_str.lower())
-    except ValueError:
-        provider = LLMProvider.OMNIKEY
+    provider_str = body.get("provider")
+    if provider_str:
+        try:
+            provider = LLMProvider(provider_str.lower())
+        except ValueError:
+            provider = LLMProvider.OMNIKEY
+    else:
+        provider = LLMProvider.OMNIKEY if os.environ.get("OMNIKEY_API_KEY") else LLMProvider.ANTHROPIC
+
+    # Fallback to available provider if requested one lacks an API key
+    if provider == LLMProvider.ANTHROPIC and not os.environ.get("ANTHROPIC_API_KEY"):
+        if os.environ.get("OMNIKEY_API_KEY"):
+            provider = LLMProvider.OMNIKEY
+        elif os.environ.get("OPENAI_API_KEY"):
+            provider = LLMProvider.OPENAI
+    elif provider == LLMProvider.OPENAI and not os.environ.get("OPENAI_API_KEY"):
+        if os.environ.get("OMNIKEY_API_KEY"):
+            provider = LLMProvider.OMNIKEY
+        elif os.environ.get("ANTHROPIC_API_KEY"):
+            provider = LLMProvider.ANTHROPIC
+
     model = body.get("model")
 
     try:
