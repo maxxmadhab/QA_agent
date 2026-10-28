@@ -1,8 +1,13 @@
 """API Testing module using HTTPX."""
 
+from __future__ import annotations
+
 from typing import Any
 
-import httpx
+try:
+    import httpx
+except ImportError:
+    httpx = None
 
 from ..models import Finding, FindingCategory, FindingStatus, Severity
 from .base import BaseTester
@@ -39,6 +44,21 @@ class APITester(BaseTester):
         full_url = f"{self.base_url}{path}" if self.base_url and path.startswith("/") else (path if path.startswith("http") else f"{self.base_url}/{path}")
         req_headers = {**self.default_headers, **(headers or {})}
         tid = test_id or f"API-{method.upper()}-{expected_status}"
+
+        if httpx is None:
+            findings.append(
+                Finding(
+                    category=FindingCategory.API,
+                    title="API Test Skipped (httpx missing)",
+                    description="The httpx library is required for API tests. Install it with: pip install httpx",
+                    severity=Severity.LOW,
+                    status=FindingStatus.FAIL,
+                    url=full_url,
+                    tool="httpx",
+                    remediation="Install httpx using `pip install httpx`",
+                )
+            )
+            return findings
 
         try:
             with httpx.Client(timeout=self.timeout) as client:

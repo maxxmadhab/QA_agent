@@ -809,6 +809,7 @@ qa-agent --fail-on-severity medium https://example.com
 | Flag | Category | Default | Description |
 |---|---|---|---|
 | `urls` | General | Positional | One or more target URLs to test |
+| `--version` | General | `False` | Show program's version number and exit |
 | `--mode {focused,explore}` | Execution | `focused` | `focused`: test target URLs only; `explore`: crawl dynamic links |
 | `--instructions TEXT` | Agentic AI | `None` | Natural language instructions for AI test step generation |
 | `--instructions-file PATH`| Agentic AI | `None` | Path to text file containing natural language instructions |
@@ -885,6 +886,19 @@ export OPENAI_API_KEY="sk-..."
 
 ### 4. High CPU/RAM utilization during parallel runs
 Each worker thread spawns a distinct browser context. When running with high worker counts (`--workers 8` or higher), ensure your system has sufficient RAM (approx. 150MB-300MB RAM per worker). Adjust `--rate-limit` to prevent target server congestion.
+
+---
+
+## 📚 Further Documentation
+
+| Document | Description |
+|---|---|
+| [Architecture](docs/architecture.md) | System architecture and how to extend QA Agent |
+| [Development Guide](docs/development.md) | Detailed development setup, testing, and build processes |
+| [Python API Reference](docs/api-reference.md) | Programmatic usage for embedding QA Agent in Python code |
+| [Test Categories](docs/test-categories.md) | Detailed test-by-test reference |
+| [Web API](docs/web-api.md) | Full REST API documentation |
+| [Contributing](CONTRIBUTING.md) | Contribution guidelines and pull request process |
 
 ---
 

@@ -1,9 +1,14 @@
 """OWASP ZAP and Web Application Security Tester."""
 
+from __future__ import annotations
+
 import shutil
 import subprocess
 
-import httpx
+try:
+    import httpx
+except ImportError:
+    httpx = None
 
 from ..models import Finding, FindingCategory, FindingStatus, Severity
 from .base import BaseTester
@@ -28,6 +33,8 @@ class ZAPTester(BaseTester):
     def check_http_security_headers(self, url: str) -> list[Finding]:
         """Perform security header and cookie attribute analysis."""
         findings: list[Finding] = []
+        if httpx is None:
+            return findings
         try:
             with httpx.Client(timeout=10.0, follow_redirects=True) as client:
                 res = client.get(url)

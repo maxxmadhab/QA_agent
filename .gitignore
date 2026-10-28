@@ -45,6 +45,8 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 
 # Translations
 *.mo
@@ -72,6 +74,7 @@ venv.bak/
 
 # QA Agent outputs
 output/
+qa-agent-output/
 qa_reports/
 screenshots/
 recordings/

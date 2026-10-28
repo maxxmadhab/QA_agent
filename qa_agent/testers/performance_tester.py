@@ -1,9 +1,14 @@
 """Performance and Load Testing Module using Locust and HTTP benchmarks."""
 
+from __future__ import annotations
+
 import time
 from typing import Any
 
-import httpx
+try:
+    import httpx
+except ImportError:
+    httpx = None
 
 from ..models import Finding, FindingCategory, FindingStatus, Severity
 from .base import BaseTester
@@ -46,6 +51,8 @@ class PerformanceTester(BaseTester):
         total_requests = 0
 
         start_time = time.time()
+        if client is None and httpx is None:
+            return findings
         http_client = client if client is not None else httpx.Client(timeout=10.0, follow_redirects=True)
         try:
             while (time.time() - start_time) < self.duration:
